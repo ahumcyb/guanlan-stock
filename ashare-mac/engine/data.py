@@ -17,6 +17,15 @@ FIELDS = {
 }
 
 
+def minimum_market_rows(counts: pd.Series, date: str) -> int:
+    prior=counts[counts.index<date].sort_index().tail(10)
+    return max(4000,int(prior.median()*.97)) if len(prior) else 4000
+
+
+def full_market_dates(counts: pd.Series) -> list:
+    return [str(date) for date,count in counts.items() if count>=minimum_market_rows(counts,str(date))]
+
+
 def validate(frame: pd.DataFrame, kind: str) -> pd.DataFrame:
     columns = FIELDS[kind]
     if not set(columns).issubset(frame.columns) or frame.empty:
@@ -82,7 +91,11 @@ def read_dataset(root: Path, overlay: Path, kind: str) -> pd.DataFrame:
 
 def read_reference(root: Path, overlay: Path, kind: str) -> pd.DataFrame:
     new = overlay/'reference'/f'{kind}.parquet'
-    return pd.read_parquet(new if new.exists() else root/'raw'/f'{kind}.parquet')
+    frame=pd.read_parquet(new if new.exists() else root/'raw'/f'{kind}.parquet')
+    date_column={'stock_basic':'list_date','trade_cal':'cal_date'}.get(kind)
+    if date_column in frame.columns:
+        frame[date_column]=pd.to_datetime(frame[date_column].astype('string'),format='%Y%m%d',errors='raise').dt.strftime('%Y%m%d')
+    return frame
 
 
 def atomic_json(path: Path, value: dict) -> None:

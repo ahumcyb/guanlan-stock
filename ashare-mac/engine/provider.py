@@ -12,6 +12,7 @@ import pandas as pd
 
 BASE_URL = 'https://pcd.mobcvb.cn/tushare/pro'
 ALLOWED = {'daily', 'adj_factor', 'stk_limit', 'stock_basic', 'trade_cal'}
+PAGE_SIZE = 20000
 
 
 def parse_response(payload: dict) -> pd.DataFrame:
@@ -71,12 +72,22 @@ class ProMax:
     def fetch(self, api: str, **params) -> pd.DataFrame:
         if api not in ALLOWED:
             raise ValueError('不支持的 ProMax 接口')
+        if api=='stock_basic':
+            # This reference endpoint rejects limit/offset in this deployment.
+            frame=self._page(api,params)
+            if frame.empty: return frame
+            if 'ts_code' not in frame.columns:
+                raise ValueError('ProMax 股票列表缺少主键')
+            unique=frame.drop_duplicates().reset_index(drop=True)
+            if unique.duplicated(['ts_code']).any():
+                raise ValueError('ProMax 股票列表存在冲突记录')
+            return unique
         pages = []
         seen=set()
         keys = ['exchange', 'cal_date'] if api == 'trade_cal' else (
             ['ts_code'] if api == 'stock_basic' else ['ts_code', 'trade_date'])
-        for offset in range(0, 100000, 5000):
-            page = self._page(api, dict(params, limit=5000, offset=offset))
+        for offset in range(0, 100000, PAGE_SIZE):
+            page = self._page(api, dict(params, limit=PAGE_SIZE, offset=offset))
             if page.empty:
                 break
             if not set(keys).issubset(page.columns):
@@ -86,7 +97,7 @@ class ProMax:
                 raise ValueError('ProMax 跨页记录重叠，无法确认分页完整性')
             seen.update(page_keys)
             pages.append(page)
-            if len(page) < 5000:
+            if len(page) < PAGE_SIZE:
                 break
         else:
             raise ValueError('ProMax 分页超过上限')

@@ -55,7 +55,7 @@ struct StockDetail: View {
                 Text("下一交易日的观察计划").font(.system(size:13,weight:.semibold))
                 VStack(spacing:11) {
                     priceRow("回踩参考",value:stock.support,note:"MA20 附近")
-                    priceRow("突破观察",value:stock.breakout,note:"前一交易日最高价")
+                    priceRow("突破观察",value:stock.breakout,note:"信号日最高价")
                     priceRow("失效参考",value:stock.invalidation,note:"近五日低点 / 1.5 ATR")
                 }
                 Text("仅作盘后观察。高开超过 3% 放弃追入，默认观察 3 个交易日。失效价不保证成交；历史检验未模拟盘中止损。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(4)

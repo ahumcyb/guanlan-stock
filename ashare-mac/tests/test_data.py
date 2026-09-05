@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 import pandas as pd
 
-from engine.data import validate, combine, publish_day
-from engine.provider import parse_response, ProMax
+from engine.data import validate, combine, publish_day, atomic_json, full_market_dates, read_reference
+from engine.provider import parse_response, ProMax, PAGE_SIZE
 
 
 def daily():
@@ -80,12 +80,41 @@ class DataTests(unittest.TestCase):
                 publish_day(Path(d),'20260904',bundle(pd.concat([one,two],ignore_index=True)))
 
     def test_nonprogressing_second_page_rejected(self):
-        page=pd.concat([daily()]*5000,ignore_index=True)
-        page['ts_code']=[f'{i:06d}.SZ' for i in range(5000)]
+        page=pd.concat([daily()]*PAGE_SIZE,ignore_index=True)
+        page['ts_code']=[f'{i:06d}.SZ' for i in range(PAGE_SIZE)]
         class Fake(ProMax):
             def __init__(self): pass
             def _page(self, api, params): return page if params['offset']==0 else page.iloc[:50]
         with self.assertRaises(ValueError): Fake().fetch('daily')
+
+    def test_invalid_report_json_does_not_replace_previous_pointer(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'current.json'
+            atomic_json(path,{'generation':'old'})
+            before=path.read_bytes()
+            with self.assertRaises(ValueError): atomic_json(path,{'value':float('nan')})
+            self.assertEqual(path.read_bytes(),before)
+            self.assertEqual(len(list(Path(d).iterdir())),1)
+
+    def test_stock_basic_uses_supported_unpaginated_reference_query(self):
+        class Fake(ProMax):
+            def __init__(self): pass
+            def _page(self,api,params):
+                if 'offset' in params or 'limit' in params: raise ValueError('reference API does not accept pagination')
+                return pd.DataFrame({'ts_code':['000001.SZ'],'name':['测试']})
+        self.assertEqual(len(Fake().fetch('stock_basic',list_status='L')),1)
+
+    def test_partial_existing_latest_session_is_not_complete(self):
+        days=pd.bdate_range('20260101',periods=11).strftime('%Y%m%d')
+        counts=pd.Series([5550]*10+[4500],index=days)
+        self.assertNotIn(days[-1],full_market_dates(counts))
+
+    def test_numeric_provider_listing_dates_are_normalized_before_join(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'raw').mkdir()
+            pd.DataFrame({'ts_code':['000001.SZ'],'list_date':[19910403]}).to_parquet(root/'raw'/'stock_basic.parquet',index=False)
+            result=read_reference(root,root/'overlay','stock_basic')
+            self.assertEqual(result.iloc[0].list_date,'19910403')
 
 
 if __name__ == '__main__':

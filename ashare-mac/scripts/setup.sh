@@ -9,8 +9,8 @@ if [ ! -x .venv/bin/python ]; then
   fi
 fi
 if command -v uv >/dev/null 2>&1; then
-  uv pip install --python .venv/bin/python -r requirements.txt
+  uv pip install --python .venv/bin/python -r requirements.lock
 else
-  .venv/bin/python -m pip install -r requirements.txt
+  .venv/bin/python -m pip install -r requirements.lock
 fi
 .venv/bin/python -c 'import pandas,numpy,pyarrow; print("研究环境就绪")'

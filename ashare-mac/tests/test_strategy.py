@@ -48,6 +48,10 @@ class StrategyTests(unittest.TestCase):
     def test_unknown_strategy_rejected(self):
         with self.assertRaises(ValueError): classify(features(bars()),strategy='unknown')
 
+    def test_next_session_breakout_uses_signal_day_high(self):
+        x=bars()
+        self.assertEqual(features(x).iloc[-1].breakout,x.iloc[-1].high)
+
     def test_leader_signals_are_point_in_time(self):
         a=bars(120); b=bars(120); b['ts_code']='000002.SZ'; b['amount']=400000
         full=pd.concat([a,b]); cutoff=a.trade_date.iloc[99]

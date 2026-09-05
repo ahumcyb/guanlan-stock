@@ -160,10 +160,9 @@ import UniformTypeIdentifiers
         let panel=NSSavePanel(); panel.allowedContentTypes=[.commaSeparatedText]
         panel.nameFieldStringValue="观澜选股-\(report?.asOf ?? "")-\(stocks.count)只.csv"
         guard panel.runModal() == .OK, let url=panel.url else { return }
-        func quote(_ value:String)->String { "\""+value.replacingOccurrences(of:"\"",with:"\"\"")+"\"" }
         var rows=["代码,名称,行业,信号日期,收盘价,涨跌幅%,匹配分,状态,回踩参考,失效参考"]
         rows += stocks.map { s in [s.tsCode,s.name,s.industry,s.tradeDate,decimal(s.close),decimal(s.change),
-                                  decimal(s.score,digits:1),s.state,decimal(s.support),decimal(s.invalidation)].map(quote).joined(separator:",") }
+                                  decimal(s.score,digits:1),s.state,decimal(s.support),decimal(s.invalidation)].map(csvCell).joined(separator:",") }
         do { try ("\u{FEFF}"+rows.joined(separator:"\r\n")).write(to:url,atomically:true,encoding:.utf8)
             progress="已导出 \(stocks.count) 只股票：\(url.lastPathComponent)"
         } catch { self.error="导出失败，请检查目标目录权限。" }

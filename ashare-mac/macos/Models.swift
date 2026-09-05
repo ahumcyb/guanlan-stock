@@ -79,3 +79,10 @@ func percent(_ value: Double?, signed: Bool = false) -> String {
     guard let value, value.isFinite else { return "—" }
     return String(format: signed ? "%+.2f%%" : "%.2f%%", value*100)
 }
+
+func csvCell(_ value:String)->String {
+    let first=value.trimmingCharacters(in:.whitespacesAndNewlines).first
+    let formula=first.map { ["=","+","-","@"].contains(String($0)) } ?? false
+    let safe=formula && Double(value)==nil ? "'"+value:value
+    return "\""+safe.replacingOccurrences(of:"\"",with:"\"\"")+"\""
+}

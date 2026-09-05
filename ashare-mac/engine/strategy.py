@@ -42,7 +42,7 @@ def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
     x['close_position'] = ((x.close-x.low)/(x.high-x.low).replace(0, np.nan)).fillna(0)
     x['continuous60'] = (x.market_index-lag('market_index', 59)) == 59
     x['low5'] = roll('adj_low', 5, 'min') / scale
-    x['breakout'] = lag('adj_high', 1) / scale
+    x['breakout'] = x.high
     return x
 
 

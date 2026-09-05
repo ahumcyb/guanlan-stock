@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from .data import read_dataset, read_reference, source_paths, atomic_json
+from .data import read_dataset, read_reference, source_paths, atomic_json, full_market_dates
 from .strategy import VERSION, STRATEGIES, features, classify, select_day
 from .backtest import study
 
@@ -43,11 +43,11 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         basic = read_reference(root, overlay, 'stock_basic')
         calendar = read_reference(root, overlay, 'trade_cal')
         counts = daily.groupby('trade_date').size()
-        full = counts[counts >= 4000]
+        full = counts.loc[full_market_dates(counts)]
         if full.empty:
             raise ValueError('不足以构建全市场截面（至少 4000 只有效日线）')
         asof = str(full.index.max())
-        recent = daily[(daily.trade_date >= str(full.index.min())) & (daily.trade_date <= asof)]
+        recent = daily[daily.trade_date.isin(full.index)]
         bars = recent.merge(basic[['ts_code','name','industry','list_date']], on='ts_code', how='left', validate='many_to_one')
         market_dates = sorted(calendar.loc[(calendar.is_open==1) & (calendar.cal_date<=asof)
                                            & (calendar.cal_date>=str(full.index.min())), 'cal_date'].astype(str).unique().tolist())
@@ -88,6 +88,8 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         if missing_adj: warnings.insert(0,f'最新日线有 {missing_adj} 只缺复权因子；连续价格信号仅供观察。')
         if missing_limit: warnings.insert(0,f'最新日线有 {missing_limit} 只缺涨跌停价；缺失事件不能计为可成交。')
         if stale_sessions: warnings.insert(0,f'行情落后交易日历 {stale_sessions} 个交易日，请更新数据。')
+        incomplete=counts[(counts.index>=full.index.min()) & ~counts.index.isin(full.index)].index.tolist()
+        if incomplete: warnings.insert(0,'以下日期截面覆盖不足，已从信号计算排除：'+', '.join(incomplete))
         update_file = overlay/'last_update.json'
         last_update = json.loads(update_file.read_text()) if update_file.exists() else None
         if last_update and last_update.get('failures'):

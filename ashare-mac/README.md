@@ -4,7 +4,7 @@
 
 ## 打开
 
-双击工程中的 **启动观澜.command**，或打开 **build/观澜选股.app**。本机已完成环境配置。
+本机已安装到 **/Users/bennie/Applications/观澜选股.app**，可在 Finder 双击打开。也可以双击工程中的 **启动观澜.command**，或打开 **build/观澜选股.app**。本机已完成环境配置。
 
 - **选股工作台**：切换“流动性趋势”或“缩量回踩转强”，查看精选、转强、等待和全部股票。搜索支持代码、名称和行业。
 - **股票详情**：30 / 60 / 120 日 K 线、均线、条件匹配、回踩/突破/失效参考。星标加入个人观察列表。
@@ -51,7 +51,7 @@ refreshes/YYYYMMDD/daily_*.parquet   # 排除 daily_basic
 
 ProMax 地址沿用现有数据接口文档：`https://pcd.mobcvb.cn/tushare/pro/{api_name}`，HTTPS GET，`X-API-Key` 请求头。凭据优先来自 `PROMAX_API_KEY` 环境变量，其次是 macOS Keychain 的 `quanta.promax.api-key`（当前系统账户）。密钥不进入命令行、URL、日志或 Git。
 
-此次部署实测发现带 `fields` 的部分历史分页有重叠，更新器请求默认字段后在本地保留规范列。页内完全相同的重复行可归一；冲突值和跨页重叠拒绝发布。日线数量同时对照近期截面，不能仅以“返回了数据”宣告完整。`daily.pre_close` 是除权参考前收；成交额单位为千元，成交量单位为手。
+此次部署实测发现带 `fields` 及小分页的部分历史请求有重叠或缺数。更新器优先用单页 20,000 行请求覆盖完整日期，请求默认字段后在本地保留规范列。股票列表接口使用不带分页参数的完整列表请求，上市日期统一规范为 YYYYMMDD 字符串；交易日历优先复用本地完整年份，缺少时显式请求开市和休市两个集合并检查自然日连续性。页内完全相同的重复行可归一；冲突值和跨页重叠拒绝发布。日线和股票列表数量同时对照历史覆盖，不能仅以“返回了数据”宣告完整。`daily.pre_close` 是除权参考前收；成交额单位为千元，成交量单位为手。
 
 原始日线中的少数股票可追溯更早年份；全市场研究的起点根据 >=4000 只股票的有效日线日期识别。实际覆盖、停留日期、当日缺因子 / 限制价的股票数均以软件报告为准。
 
@@ -63,6 +63,8 @@ ProMax 地址沿用现有数据接口文档：`https://pcd.mobcvb.cn/tushare/pro
 cd /Users/bennie/quanta/ashare-mac
 bash scripts/setup.sh
 .venv/bin/python -m unittest discover -s tests -v
+swiftc -parse-as-library macos/Models.swift tests/NativeModelTests.swift -o .cache/native-tests
+.cache/native-tests
 bash scripts/build.sh
 open build/观澜选股.app
 ```
