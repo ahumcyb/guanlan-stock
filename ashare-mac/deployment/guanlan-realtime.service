@@ -1,0 +1,30 @@
+[Unit]
+Description=Guanlan timed intraday screening and private phone alerts
+After=network-online.target guanlan-mobile-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guanlan-worker
+Group=guanlan-data
+SupplementaryGroups=guanlan-control
+WorkingDirectory=/opt/guanlan-app
+EnvironmentFile=/etc/guanlan-mobile/worker.env
+ExecStart=/opt/guanlan-app/.venv/bin/python -u -m mobile_server.realtime_worker --root /srv/guanlan-mobile --market-root /srv/guanlan-data/current --cache /srv/guanlan-mobile/realtime-cache
+Restart=on-failure
+RestartSec=5
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/guanlan-mobile
+MemoryMax=600M
+MemorySwapMax=1G
+CPUQuota=100%
+TasksMax=32
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

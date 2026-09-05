@@ -34,7 +34,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
 struct RootView:View {
     @EnvironmentObject var store:AppStore
     @State private var page="选股工作台"
-    private let items=[("选股工作台","square.grid.2x2"),("我的观察","star"),("历史检验","chart.bar.xaxis"),("数据管理","externaldrive"),("策略说明","text.book.closed")]
+    private let items=[("选股工作台","square.grid.2x2"),("实时提醒","bell.badge"),("我的观察","star"),("历史检验","chart.bar.xaxis"),("数据管理","externaldrive"),("策略说明","text.book.closed")]
     var body:some View {
         HStack(spacing:0) {
             sidebar.frame(width:184)
@@ -52,12 +52,13 @@ struct RootView:View {
                     }.font(.system(size:11)).foregroundStyle(Palette.amber).padding(12).background(Palette.amber.opacity(0.07))
                 }
                 Group {
-                    if store.report == nil && page != "数据管理" && page != "策略说明" {
+                    if store.report == nil && page != "数据管理" && page != "策略说明" && page != "实时提醒" {
                         EmptyViewMessage(icon:store.busy ? "waveform.path":"externaldrive.badge.questionmark",
                             title:store.busy ? "正在准备你的选股工作台":"尚未载入日线数据",
                             message:store.busy ? store.progress:"前往数据管理选择行情目录，或点击重新选股。")
                     } else {
                         switch page {
+                        case "实时提醒": RealtimeView()
                         case "我的观察": WorkspaceView(favoritesOnly:true).id("favorites")
                         case "历史检验": ResearchView()
                         case "数据管理": DataView()
@@ -97,7 +98,7 @@ struct RootView:View {
                 Rectangle().fill(Palette.line).frame(height:1).padding(.bottom,6)
                 HStack(spacing:6) { Circle().fill(Palette.teal).frame(width:5,height:5); Text("本机研究引擎").font(.system(size:10)) }
                 Text("短线 1–5 日\n让每个判断都有依据。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(6)
-                Text("v1.1  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
+                Text("v1.2  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
             }.padding(24)
         }
     }
@@ -105,21 +106,24 @@ struct RootView:View {
         HStack(spacing:12) {
             Text(page).font(.system(size:12,weight:.medium))
             Spacer()
-            if let report=store.report {
+            if let report=store.report, page != "实时提醒" {
                 HStack(spacing:5) { Circle().fill(report.staleSessions==0 ? Palette.teal:Palette.amber).frame(width:5,height:5); Text("\(dateText(report.asOf)) 收盘") }
                     .font(.system(size:11)).foregroundStyle(Palette.muted)
             }
+            if page == "实时提醒" { Text("北京时间 · 交易日自动执行").font(.system(size:11)).foregroundStyle(Palette.muted) }
+            else {
             Button { store.run(update:false) } label: { Label("重新选股",systemImage:"arrow.clockwise") }
                 .controlSize(.small).disabled(store.busy)
             Button { store.run(update:true) } label: { Label(store.remoteEnabled ? "同步服务器":"更新数据",systemImage:"arrow.down.to.line") }
                 .buttonStyle(.borderedProminent).tint(Palette.teal).controlSize(.small).disabled(store.busy)
+            }
         }.padding(.horizontal,24).frame(height:62)
     }
     private var footer:some View {
         HStack(spacing:9) {
             if store.busy { ProgressView().controlSize(.mini).scaleEffect(0.7) }
             else { Image(systemName:"checkmark.circle").foregroundStyle(Palette.teal) }
-            Text(store.progress).lineLimit(1)
+            Text(page == "实时提醒" && !store.busy ? "实时结果以各条行情的时间为准":store.progress).lineLimit(1)
             Spacer()
             if store.busy { Button("取消") { store.cancel() }.buttonStyle(.plain) }
             Text("仅供研究 · 匹配分不代表胜率").foregroundStyle(Palette.muted)

@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
 from .queue import JobQueue,canonical_uuid
+from .realtime import RealtimeStore
 
 
 class Failure(Exception):
@@ -26,6 +27,7 @@ class Service:
         if worker_token is not None and (not re.fullmatch(r'[a-f0-9]{64}',worker_token) or worker_token==token):raise ValueError('Invalid worker credential')
         self.root=root.resolve();self.token=token;self.jobs=self.root/'jobs';self.jobs.mkdir(parents=True,exist_ok=True)
         self.worker_token=worker_token;self.queue=JobQueue(self.jobs)
+        self.realtime=RealtimeStore(self.root)
 
     def state(self):
         return self.queue.public()
@@ -62,6 +64,35 @@ class Service:
         parsed=urlsplit(target)
         if parsed.query or '%' in parsed.path or '..' in parsed.path:raise Failure(400,'INVALID_PATH','请求路径无效')
         parts=parsed.path.strip('/').split('/')
+        realtime_phone = parts[:2] == ['v1','realtime']
+        realtime_worker = parts[:3] == ['v1','worker','realtime']
+        if realtime_phone or realtime_worker:
+            action = parts[3:] if realtime_worker else parts[2:]
+            if method == 'GET' and action in [[], ['state']]:
+                return 200,self.realtime.public()
+            if method == 'POST':
+                try:
+                    value=json.loads(body)
+                    if not isinstance(value,dict):raise ValueError()
+                    if realtime_phone and action==['settings']:
+                        return 200,self.realtime.configure(value)
+                    if realtime_phone and action==['scan'] and not value:return 202,self.realtime.request_scan()
+                    if realtime_phone and action==['test'] and not value:return 202,self.realtime.test_notification()
+                    if realtime_worker:
+                        if action==['state'] and not value:return 200,self.realtime.public()
+                        if action==['claim'] and not value:return 200,{'job':self.realtime.claim('mac')}
+                        if action==['renew'] and set(value)=={'lease'}:
+                            accepted=self.realtime.renew(value['lease'])
+                        elif action==['publish'] and set(value)=={'lease','report'}:
+                            accepted=self.realtime.publish(value['lease'],value['report'])
+                        elif action==['failure'] and set(value)=={'lease'}:
+                            accepted=self.realtime.fail(value['lease'])
+                        else:raise ValueError()
+                        if not accepted:raise Failure(409,'LEASE_EXPIRED','盘中执行连接已过期')
+                        return 200,{'accepted':True}
+                except BlockingIOError:raise Failure(429,'COOLDOWN','请稍后重试，每分钟最多一次')
+                except (ValueError,TypeError,KeyError):raise Failure(400,'INVALID_BODY','盘中请求无效，请检查设置或数据时间')
+            raise Failure(404,'NOT_FOUND','盘中接口不存在')
         if worker and method=='POST':
             try:value=json.loads(body)
             except (ValueError,UnicodeError):raise Failure(400,'INVALID_BODY','Invalid worker message')
@@ -120,7 +151,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.connection.settimeout(180)
                 status,value=self.server.service.upload(self.path,self.headers.get('Authorization',''),self.headers.get('X-Guanlan-Lease',''),self.rfile,length)
             else:
-                if not 0<=length<=1024:raise Failure(413,'TOO_LARGE','请求体过大')
+                body_limit=256*1024 if self.path=='/v1/worker/realtime/publish' else (4096 if self.path in ['/v1/realtime/settings','/v1/worker/realtime/settings'] else 1024)
+                if not 0<=length<=body_limit:raise Failure(413,'TOO_LARGE','请求体过大')
                 body=self.rfile.read(length)
                 status,value=self.server.service.dispatch(self.command,self.path,self.headers.get('Authorization',''),body)
             data=value.read_bytes() if isinstance(value,Path) else json.dumps(value,ensure_ascii=False,allow_nan=False).encode()

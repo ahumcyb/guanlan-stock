@@ -28,7 +28,7 @@ class WorkerClient:
         self.context=ssl.create_default_context(cadata=ssl.DER_cert_to_PEM_cert(certificate))
         self.token=config['token']
 
-    def request(self,path,value=None,upload=None,lease=None):
+    def request(self,path,value=None,upload=None,lease=None,method='POST'):
         connection=http.client.HTTPSConnection('106.14.125.189',context=self.context,timeout=180 if upload else 20)
         try:
             headers={'Authorization':'Bearer '+self.token,'Accept':'application/json'}
@@ -36,10 +36,11 @@ class WorkerClient:
                 headers.update({'X-Guanlan-Lease':lease,'Content-Length':str(upload.stat().st_size),'Content-Type':'application/zip'})
                 with upload.open('rb') as body:connection.request('PUT',path,body=body,headers=headers)
             else:
-                headers['Content-Type']='application/json';connection.request('POST',path,json.dumps(value or {}).encode(),headers)
-            response=connection.getresponse();body=response.read(65537)
+                headers['Content-Type']='application/json';connection.request(method,path,None if method=='GET' else json.dumps(value or {}).encode(),headers)
+            limit=2*1024*1024 if path.startswith(('/v1/worker/realtime/','/v1/realtime')) else 65536
+            response=connection.getresponse();body=response.read(limit+1)
             if response.status==409:raise LostLease()
-            if response.status not in (200,202) or len(body)>65536:raise ValueError('Worker request failed')
+            if response.status not in (200,202) or len(body)>limit:raise ValueError('Worker request failed')
             return json.loads(body)
         finally:connection.close()
 

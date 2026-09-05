@@ -27,6 +27,8 @@ for path in sorted((ROOT/'Sources').rglob('*.swift')):
     references.append(reference);sources.append(add(relative+' build','PBXBuildFile',fileRef=reference))
 reference=add('SharedModels','PBXFileReference',lastKnownFileType='sourcecode.swift',name='Shared Mac Models.swift',path='../ashare-mac/macos/Models.swift',sourceTree='<group>')
 references.append(reference);sources.append(add('SharedModels build','PBXBuildFile',fileRef=reference))
+reference=add('RealtimeModels','PBXFileReference',lastKnownFileType='sourcecode.swift',name='Shared Realtime Models.swift',path='../ashare-mac/macos/RealtimeModels.swift',sourceTree='<group>')
+references.append(reference);sources.append(add('RealtimeModels build','PBXBuildFile',fileRef=reference))
 product=add('Product','PBXFileReference',explicitFileType='wrapper.application',includeInIndex=0,path='Guanlan.app',sourceTree='BUILT_PRODUCTS_DIR')
 assets=add('Assets','PBXFileReference',lastKnownFileType='folder.assetcatalog',path='Assets.xcassets',sourceTree='<group>')
 references.append(assets)
@@ -42,7 +44,7 @@ for name in ['Debug','Release']:
         'SWIFT_OPTIMIZATION_LEVEL':'-Onone' if name=='Debug' else '-O','SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG' if name=='Debug' else '',
         'SDKROOT':'iphoneos','SUPPORTED_PLATFORMS':'iphoneos iphonesimulator','TARGETED_DEVICE_FAMILY':'1,2',
         'INFOPLIST_FILE':'Info.plist','GENERATE_INFOPLIST_FILE':'NO','CODE_SIGN_STYLE':'Automatic','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
-        'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CURRENT_PROJECT_VERSION':'2','MARKETING_VERSION':'1.0.0',
+        'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CURRENT_PROJECT_VERSION':'3','MARKETING_VERSION':'1.1.0',
         'ENABLE_USER_SCRIPT_SANDBOXING':'YES','SWIFT_STRICT_CONCURRENCY':'minimal'}
     if team_match:settings['DEVELOPMENT_TEAM']=team_match[1]
     target_configs.append(add('Target '+name,'XCBuildConfiguration',name=name,buildSettings=settings))
@@ -65,6 +67,7 @@ info=dict(CFBundleDevelopmentRegion='zh-Hans',CFBundleDisplayName='观澜选股'
 info['UTExportedTypeDeclarations']=[{'UTTypeIdentifier':'local.guanlan.connection','UTTypeDescription':'观澜服务器连接','UTTypeConformsTo':['public.json'],'UTTypeTagSpecification':{'public.filename-extension':['guanlan']}}]
 info['CFBundleDocumentTypes']=[{'CFBundleTypeName':'观澜连接','CFBundleTypeRole':'Viewer','LSHandlerRank':'Owner','LSItemContentTypes':['local.guanlan.connection']}]
 info['LSSupportsOpeningDocumentsInPlace']=True
+info['CFBundleURLTypes']=[{'CFBundleURLName':'local.guanlan.alerts','CFBundleURLSchemes':['guanlan']}]
 # iOS 17+ applies ATS to IP hosts. Permit this server's private CA evaluation;
 # Connection.swift still requires HTTPS, TLS 1.2+, a paired anchor and exact IP.
 info['NSAppTransportSecurity']={'NSExceptionDomains':{'106.14.125.189':{

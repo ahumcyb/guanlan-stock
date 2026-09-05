@@ -10,6 +10,12 @@ import Combine
     @Published var message="导入连接配置后即可同步"
     @Published var error:String?
     @Published var connected=false
+    @Published var selectedTab=0
+    @Published var realtime:RealtimeState?
+    @Published var realtimeBusy=false
+    @Published var realtimeMessage="连接服务器后查看定时策略和提醒"
+    @Published var realtimeSettingsPresented=false
+    @Published var realtimeNavigationRevision=0
     private var api:MobileAPI?
     let cache:OfflineCache
     private var operation:UUID?
@@ -94,11 +100,38 @@ import Combine
         while !Task.isCancelled {
             let previous=status?.job
             await refreshStatus()
+            await refreshRealtime()
             if previous?.active==true,status?.job.status=="completed" { await synchronize() }
             if status?.job.status=="failed" { error=status?.job.message }
             do { try await Task.sleep(for:.seconds(status?.job.active==true ? 3:20)) }
             catch { return }
         }
+    }
+    func refreshRealtime() async {
+        guard let api else { return }
+        do {
+            let data=try await api.request("/v1/realtime",limit:2*1024*1024)
+            let value=try mobileDecoder().decode(RealtimeState.self,from:data)
+            guard value.schemaVersion==1,value.events.count<=30 else { throw MobileFailure.invalidData }
+            realtime=value;realtimeMessage=value.running ? "正在检查实时行情":"已同步实时提醒状态"
+        } catch { realtimeMessage="实时服务暂未连接；请下拉刷新，已有研究结果仍可使用。" }
+    }
+    func realtimeAction(_ action:String,values:[String:Any]=[:]) async {
+        guard let api,!realtimeBusy,["settings","test","scan"].contains(action) else { return }
+        realtimeBusy=true
+        defer { realtimeBusy=false }
+        do {
+            let body=try JSONSerialization.data(withJSONObject:values)
+            _=try await api.request("/v1/realtime/\(action)",method:"POST",body:body,limit:65536)
+            await refreshRealtime()
+            realtimeMessage=action=="settings" ? "设置已保存" : (action=="test" ? "测试已提交，请查看 Bark 和提醒记录":"检查已提交，优先等待 Mac 执行")
+        } catch { realtimeMessage=error.localizedDescription }
+    }
+    func openURL(_ url:URL) async {
+        if url.scheme=="guanlan",url.host=="alerts" {
+            realtimeSettingsPresented=false;realtimeNavigationRevision+=1
+            selectedTab=1;await refreshRealtime()
+        } else if url.isFileURL { await importConnection(url) }
     }
     func toggleFavorite(_ stock:Stock) {
         if favorites.contains(stock.id) { favorites.remove(stock.id) } else { favorites.insert(stock.id) }
