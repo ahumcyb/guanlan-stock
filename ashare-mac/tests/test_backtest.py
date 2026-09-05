@@ -58,3 +58,12 @@ class BacktestTests(unittest.TestCase):
     def test_invalid_horizon_rejected(self):
         with self.assertRaises(ValueError):
             self.run_event(0)
+
+    def test_unknown_exit_session_is_not_delayed_as_known_suspension(self):
+        del self.quotes[self.dates[4],'000001.SZ']
+        self.assertEqual(self.run_event()['status'],'missing_exit')
+
+    def test_recent_locked_exit_is_censored_until_delay_window_matures(self):
+        self.dates=self.dates[:5]
+        self.quotes[self.dates[4],'000001.SZ']['open']=9.
+        self.assertEqual(self.run_event()['status'],'censored')

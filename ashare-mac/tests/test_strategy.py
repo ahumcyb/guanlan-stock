@@ -39,6 +39,12 @@ class StrategyTests(unittest.TestCase):
         out = classify(features(pd.concat([a,b])))
         self.assertTrue((out.loc[out.eligible, 'rs20'] == .5).all())
 
+    def test_market_wide_missing_session_breaks_continuity(self):
+        complete=bars(100); dates=complete.trade_date.tolist()
+        missing=complete.drop(index=80)
+        out=features(missing,market_dates=dates)
+        self.assertFalse(out.iloc[-1].continuous60)
+
 
 if __name__ == '__main__':
     unittest.main()

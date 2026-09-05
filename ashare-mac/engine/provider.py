@@ -45,14 +45,13 @@ class ProMax:
         if not secret or not secret.isascii() or not all(32 < ord(c) < 127 for c in secret):
             raise ValueError('找不到 ProMax 凭据，请在钥匙串配置 quanta.promax.api-key')
         self._secret = secret
-        self._opener = build_opener(NoRedirect())
 
     def _page(self, api: str, params: dict) -> pd.DataFrame:
         request = Request(f'{BASE_URL}/{api}?{urlencode(params)}', method='GET',
                           headers={'X-API-Key': self._secret, 'Accept': 'application/json'})
         for attempt in range(3):
             try:
-                with self._opener.open(request, timeout=25) as response:
+                with build_opener(NoRedirect()).open(request, timeout=25) as response:
                     body = response.read(32 * 1024 * 1024 + 1)
                 if len(body) > 32 * 1024 * 1024 or self._secret.encode() in body:
                     raise ValueError('ProMax 返回内容未通过安全校验')
@@ -73,10 +72,19 @@ class ProMax:
         if api not in ALLOWED:
             raise ValueError('不支持的 ProMax 接口')
         pages = []
+        seen=set()
+        keys = ['exchange', 'cal_date'] if api == 'trade_cal' else (
+            ['ts_code'] if api == 'stock_basic' else ['ts_code', 'trade_date'])
         for offset in range(0, 100000, 5000):
             page = self._page(api, dict(params, limit=5000, offset=offset))
             if page.empty:
                 break
+            if not set(keys).issubset(page.columns):
+                raise ValueError('ProMax 返回缺主键，停止更新')
+            page_keys=set(page[keys].itertuples(index=False,name=None))
+            if page_keys & seen:
+                raise ValueError('ProMax 跨页记录重叠，无法确认分页完整性')
+            seen.update(page_keys)
             pages.append(page)
             if len(page) < 5000:
                 break
@@ -85,8 +93,11 @@ class ProMax:
         if not pages:
             return pd.DataFrame()
         frame = pd.concat(pages, ignore_index=True)
-        keys = ['exchange', 'cal_date'] if api == 'trade_cal' else (
-            ['ts_code'] if api == 'stock_basic' else ['ts_code', 'trade_date'])
-        if not set(keys).issubset(frame.columns) or frame.duplicated(keys).any():
-            raise ValueError('ProMax 分页重复或缺主键，停止更新')
-        return frame
+        if not set(keys).issubset(frame.columns):
+            raise ValueError('ProMax 返回缺主键，停止更新')
+        # Some ProMax historical partitions contain exact duplicate records.
+        # Normalize only identical rows; conflicting key values remain fatal.
+        unique = frame.drop_duplicates().reset_index(drop=True)
+        if unique.duplicated(keys).any():
+            raise ValueError('ProMax 同一主键存在冲突值，停止更新')
+        return unique

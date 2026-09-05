@@ -36,14 +36,16 @@ def evaluate_event(code, date, horizon, dates, quotes, cost=.003):
         return result
     for j in range(target, min(target+6, len(dates))):
         exit_quote = quotes.get((dates[j], code))
-        if not available(exit_quote) or exit_quote['open'] <= exit_quote['down_limit']+.001:
+        if not available(exit_quote):
+            return dict(result,status='missing_exit',missing_date=dates[j])
+        if exit_quote['open'] <= exit_quote['down_limit']+.001:
             continue
         gross = (exit_quote['open']*exit_quote['adj_factor'])/(entry['open']*entry['adj_factor'])-1
         return dict(result, status='settled', exit_date=dates[j], delay=j-target,
                     gross_return=float(gross), net_return=float(gross-cost),
                     stress_return=float(gross-2*cost))
     # Do not silently discard potentially locked losing positions.
-    return dict(result, status='unresolved')
+    return dict(result, status='unresolved' if target+5<len(dates) else 'censored')
 
 
 def summarize(events):

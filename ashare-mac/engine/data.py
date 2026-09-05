@@ -115,7 +115,10 @@ def publish_day(root: Path, date: str, frames: Dict[str, pd.DataFrame]) -> None:
     if target.exists():
         # Published days are immutable; a retry is safe only if identical.
         for k, f in checked.items():
-            combine([pd.read_parquet(target/f'{k}.parquet'), f], k)
+            old=validate(pd.read_parquet(target/f'{k}.parquet'),k)
+            merged=combine([old,f],k)
+            if len(old)!=len(f) or len(merged)!=len(old):
+                raise ValueError(f'{date}: 已发布分区与重试记录集合不同')
         return
     stage = Path(tempfile.mkdtemp(prefix='.staging-', dir=root))
     try:

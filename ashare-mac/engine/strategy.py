@@ -5,7 +5,7 @@ import pandas as pd
 VERSION = 'pullback-1.0.0'
 
 
-def features(bars: pd.DataFrame) -> pd.DataFrame:
+def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
     x = bars.sort_values(['ts_code', 'trade_date']).reset_index(drop=True).copy()
     groups = x.groupby('ts_code', sort=False)
     x['ret1'] = x.close / x.pre_close - 1
@@ -15,7 +15,7 @@ def features(bars: pd.DataFrame) -> pd.DataFrame:
     x['adj_low'] = x.low * scale
     x['adj_open'] = x.open * scale
     x['observations'] = groups.cumcount() + 1
-    dates = {d: i for i, d in enumerate(sorted(x.trade_date.unique()))}
+    dates = {d: i for i, d in enumerate(market_dates if market_dates is not None else sorted(x.trade_date.unique()))}
     x['market_index'] = x.trade_date.map(dates)
 
     def roll(column, window, operation='mean'):

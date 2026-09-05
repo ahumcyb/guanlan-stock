@@ -49,8 +49,12 @@ def generate(root: Path, overlay: Path, output: Path):
         asof = str(full.index.max())
         recent = daily[(daily.trade_date >= str(full.index.min())) & (daily.trade_date <= asof)]
         bars = recent.merge(basic[['ts_code','name','industry','list_date']], on='ts_code', how='left', validate='many_to_one')
+        market_dates = sorted(calendar.loc[(calendar.is_open==1) & (calendar.cal_date<=asof)
+                                           & (calendar.cal_date>=str(full.index.min())), 'cal_date'].astype(str).unique().tolist())
+        if not set(recent.trade_date.unique()).issubset(market_dates):
+            raise ValueError('日线与交易日历不一致')
         progress(f'计算 {bars.ts_code.nunique():,} 只股票的趋势、量能与风险…')
-        signals = classify(features(bars))
+        signals = classify(features(bars,market_dates=market_dates))
         latest = signals[signals.trade_date==asof]
         shortlist = select_day(latest)
         all_latest = signals.groupby('ts_code',sort=False).tail(1).copy()
@@ -71,10 +75,6 @@ def generate(root: Path, overlay: Path, output: Path):
                 'support','breakout','invalidation','trend_ok','strength_ok','pullback_ok','volume_ok','turn_ok',
                 'strength_score','trend_score','position_score','volume_score','risk_score']
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
-        market_dates = sorted(calendar.loc[(calendar.is_open==1) & (calendar.cal_date<=asof)
-                                           & (calendar.cal_date>=str(full.index.min())), 'cal_date'].astype(str).unique().tolist())
-        if not set(recent.trade_date.unique()).issubset(market_dates):
-            raise ValueError('日线与交易日历不一致')
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
         backtest = study(signals, factors, limits, market_dates)
         now = datetime.now(ZoneInfo('Asia/Shanghai'))

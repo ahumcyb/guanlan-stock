@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import fcntl
 
 import pandas as pd
@@ -54,6 +55,7 @@ def update(root: Path, overlay: Path, through=None) -> dict:
         status('读取本地覆盖范围…')
         datasets = {k: read_dataset(root, overlay, k) for k in FIELDS}
         by_day = {k: {d: g for d, g in f.groupby('trade_date')} for k, f in datasets.items()}
+        known_counts=datasets['daily'].groupby('trade_date').size().sort_index()
         needed = []
         for date in dates:
             frames = {k: by_day[k].get(date) for k in FIELDS}
@@ -66,7 +68,8 @@ def update(root: Path, overlay: Path, through=None) -> dict:
             if not complete:
                 needed.append(date)
         failures, published = [], 0
-        for i, date in enumerate(needed):
+
+        def complete_day(i, date):
             try:
                 frames = {}
                 for k in FIELDS:
@@ -80,17 +83,26 @@ def update(root: Path, overlay: Path, through=None) -> dict:
                     else:
                         status(f'补齐 {i+1}/{len(needed)} · {date} · {k}')
                         remote = client.fetch(k, trade_date=date, fields=','.join(FIELDS[k]))
-                        if k == 'daily' and len(remote) < 4000:
-                            raise ValueError('日线不足 4000 行，保留旧数据')
+                        prior=known_counts[known_counts.index<date].tail(10)
+                        minimum=max(4000,int(prior.median()*.97)) if len(prior) else 4000
+                        if k == 'daily' and len(remote) < minimum:
+                            raise ValueError(f'日线仅 {len(remote)} 行，低于近期覆盖阈值 {minimum}，保留旧数据')
                         frames[k] = remote
                 publish_day(overlay/'updates', date, frames)
-                published += 1
                 status(f'已校验并保存 {date} · {len(frames["daily"])} 只')
+                return None
             except ValueError as e:
-                failures.append({'date':date, 'error':str(e)})
                 status(f'{date} 暂未补齐：{e}')
-                if len(failures)>=3 and all('HTTP' in f['error'] or '网络' in f['error'] for f in failures[-3:]):
-                    break
+                return {'date':date, 'error':str(e)}
+
+        # Independent immutable day partitions; at most three in-flight requests.
+        with ThreadPoolExecutor(max_workers=3) as workers:
+            futures=[workers.submit(complete_day,i,d) for i,d in enumerate(needed)]
+            for future in as_completed(futures):
+                failure=future.result()
+                if failure: failures.append(failure)
+                else: published+=1
+        failures.sort(key=lambda f:f['date'])
         status('更新股票名称与行业…')
         basic = client.fetch('stock_basic', list_status='L', fields='ts_code,symbol,name,industry,market,list_date,list_status')
         required = ['ts_code', 'name', 'industry', 'list_date']

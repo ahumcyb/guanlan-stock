@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from engine.data import validate, combine, publish_day
-from engine.provider import parse_response
+from engine.provider import parse_response, ProMax
 
 
 def daily():
@@ -54,6 +54,38 @@ class DataTests(unittest.TestCase):
     def test_provider_errors_do_not_echo_payload(self):
         with self.assertRaisesRegex(ValueError, '^ProMax 返回错误状态$'):
             parse_response({'code': 401, 'msg': 'secret-should-never-be-echoed'})
+
+    def test_identical_provider_duplicates_can_be_normalized(self):
+        class Fake(ProMax):
+            def __init__(self): pass
+            def _page(self, api, params): return pd.concat([daily(),daily()],ignore_index=True)
+        self.assertEqual(len(Fake().fetch('daily')),1)
+
+    def test_provider_conflicting_duplicates_are_rejected(self):
+        x=daily(); x.loc[0,'close']=10.7
+        class Fake(ProMax):
+            def __init__(self): pass
+            def _page(self, api, params): return pd.concat([daily(),x],ignore_index=True)
+        with self.assertRaises(ValueError): Fake().fetch('daily')
+
+    def test_existing_partition_rejects_superset_retry(self):
+        with tempfile.TemporaryDirectory() as d:
+            one = daily()
+            def bundle(frame):
+                return {'daily':frame,'adj_factor':frame[ ['ts_code','trade_date'] ].assign(adj_factor=1.),
+                        'stk_limit':frame[ ['ts_code','trade_date'] ].assign(up_limit=11.,down_limit=9.)}
+            publish_day(Path(d),'20260904',bundle(one))
+            two=one.copy(); two['ts_code']='000002.SZ'
+            with self.assertRaises(ValueError):
+                publish_day(Path(d),'20260904',bundle(pd.concat([one,two],ignore_index=True)))
+
+    def test_nonprogressing_second_page_rejected(self):
+        page=pd.concat([daily()]*5000,ignore_index=True)
+        page['ts_code']=[f'{i:06d}.SZ' for i in range(5000)]
+        class Fake(ProMax):
+            def __init__(self): pass
+            def _page(self, api, params): return page if params['offset']==0 else page.iloc[:50]
+        with self.assertRaises(ValueError): Fake().fetch('daily')
 
 
 if __name__ == '__main__':
