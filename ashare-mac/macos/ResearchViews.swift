@@ -163,7 +163,11 @@ struct StrategyView:View {
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:22) {
-                pageTitle("策略说明",subtitle:"shortline-1.1.0 · 两套固定规则，可在工作台切换")
+                pageTitle("策略说明",subtitle:"尾盘定时筛选与盘后研究 · 每项条件都有明确口径")
+                Text("尾盘定时选股").font(.system(size:20,weight:.semibold))
+                RealtimeStrategyDescriptions()
+                Divider().padding(.vertical,10)
+                Text("盘后研究策略").font(.system(size:20,weight:.semibold))
                 Panel { VStack(alignment:.leading,spacing:13) {
                     HStack { Text("流动性趋势").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"默认方案") }
                     Text("在基础池中选择 20 日成交额前 20%、20 日相对强度前 50% 的股票。收盘 > MA20 > MA60，MA20 向上；高于 MA20 不超过 8%，5 日涨幅在 -3% 至 12%。收盘不低于 MA10 且单日涨幅 0–5% 时确认。市场宽度至少 40%。").font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5)

@@ -67,6 +67,7 @@ struct RealtimeView: View {
                     Text(store.state?.settings.enabled == true ? "自动运行已开启" : "自动运行已暂停")
                 }.font(.system(size: 12)).foregroundStyle(Palette.teal)
                 Text(store.message).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                DisclosureGroup("两种选股策略如何筛选") { RealtimeStrategyDescriptions().padding(.top, 12) }
                 if showSettings { settings }
                 if let latest = store.state?.latest {
                     GroupBox {
@@ -166,6 +167,36 @@ struct RealtimeView: View {
                         .disabled(store.state?.settings.barkConfigured != true)
                 }.disabled(store.busy)
             }.padding(12)
+        }
+    }
+}
+
+struct RealtimeStrategyDescriptions: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(RealtimeStrategyGuide.schedule).font(.system(size: 12)).foregroundStyle(Palette.muted)
+            HStack(alignment: .top, spacing: 18) {
+                ForEach(RealtimeStrategyGuide.all) { guide in
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(guide.title).font(.system(size: 18, weight: .semibold))
+                            Text(guide.summary).font(.system(size: 12)).foregroundStyle(Palette.muted)
+                            Divider()
+                            ForEach(Array(guide.conditions.enumerated()), id: \.offset) { number, text in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Text(String(number + 1)).foregroundStyle(Palette.teal).frame(width: 16)
+                                    Text(text).frame(maxWidth: .infinity, alignment: .leading)
+                                }.font(.system(size: 12)).lineSpacing(4)
+                            }
+                            Text("仍需复核").font(.system(size: 12, weight: .semibold)).padding(.top, 5)
+                            ForEach(guide.review, id: \.self) { Text($0).font(.system(size: 11)).foregroundStyle(Palette.amber).lineSpacing(3) }
+                            Text(guide.interpretation).font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                            Link(guide.sourceName, destination: URL(string: guide.sourceURL)!).font(.system(size: 11))
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    }.frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            Text(RealtimeStrategyGuide.scope).font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
         }
     }
 }

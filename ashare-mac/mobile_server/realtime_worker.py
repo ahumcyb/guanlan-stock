@@ -138,7 +138,7 @@ def main(args):
                     pass
         threading.Thread(target=service_pulse, daemon=True).start()
         try:
-            last_calendar = 0
+            last_calendar = -21600  # Refresh on startup even just after the host boots.
             from .notifications import send_bark
             while True:
                 if time.monotonic() - last_calendar > 21600:

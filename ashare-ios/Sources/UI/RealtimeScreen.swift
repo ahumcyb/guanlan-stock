@@ -32,6 +32,16 @@ struct RealtimeScreen: View {
                 } footer: {
                     Text("到点由 Mac 或备用服务器筛选，完成后手机收到提醒，点击查看结果。手机无需保持 App 打开。")
                 }
+                Section("选股策略说明") {
+                    ForEach(RealtimeStrategyGuide.all) { guide in
+                        NavigationLink { RealtimeStrategyDetail(guide: guide) } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(guide.title).font(.headline)
+                                Text(guide.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }.padding(.vertical, 3)
+                        }
+                    }
+                }
                 if let snapshot = store.realtime?.lastScreen {
                     Section("最近尾盘检查 · \(dateText(snapshot.date))") {
                         Text(snapshot.message).font(.subheadline)
@@ -99,6 +109,35 @@ struct RealtimeScreen: View {
             .sheet(isPresented: $store.realtimeSettingsPresented) { RealtimeSettingsScreen() }
         }
         .id(store.realtimeNavigationRevision)
+    }
+}
+
+struct RealtimeStrategyDetail: View {
+    let guide: RealtimeStrategyGuide
+    var body: some View {
+        List {
+            Section {
+                Text(guide.title).font(.title2.weight(.semibold))
+                Text(guide.summary)
+            }
+            Section("执行时间") { Text(RealtimeStrategyGuide.schedule) }
+            Section("筛选条件与口径") {
+                ForEach(Array(guide.conditions.enumerated()), id: \.offset) { number, text in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(String(number + 1)).font(.headline.monospacedDigit()).foregroundStyle(MobileTheme.teal).frame(width: 20)
+                        Text(text)
+                    }.padding(.vertical, 4)
+                }
+            }
+            Section("仍需复核") {
+                ForEach(guide.review, id: \.self) { Text($0).foregroundStyle(MobileTheme.amber) }
+            }
+            Section("如何理解结果") { Text(guide.interpretation) }
+            Section("股票与数据范围") { Text(RealtimeStrategyGuide.scope).font(.footnote) }
+            Section("参考来源") { Link(guide.sourceName, destination: URL(string: guide.sourceURL)!) }
+        }
+        .navigationTitle(guide.id == "overnight" ? "一夜持股" : "黄金半小时")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
