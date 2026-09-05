@@ -1,0 +1,35 @@
+limit_req_zone $binary_remote_addr zone=guanlan_rate:1m rate=8r/s;
+limit_conn_zone $binary_remote_addr zone=guanlan_connections:1m;
+server {
+    listen 443 ssl;
+    server_name 106.14.125.189;
+    ssl_certificate /etc/guanlan-mobile/tls/server.crt;
+    ssl_certificate_key /etc/guanlan-mobile/tls/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    access_log off;
+    server_tokens off;
+    client_max_body_size 1k;
+    client_header_timeout 10s;
+    client_body_timeout 30s;
+    limit_conn guanlan_connections 6;
+    limit_req zone=guanlan_rate burst=20 nodelay;
+    gzip on;
+    gzip_types application/json;
+    gzip_min_length 1024;
+    location /v1/worker/uploads/ {
+        client_max_body_size 256m;
+        client_body_timeout 180s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+        proxy_request_buffering on;
+        proxy_pass http://127.0.0.1:8787;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_read_timeout 35s;
+        proxy_send_timeout 15s;
+        proxy_set_header Host $host;
+        proxy_set_header Connection close;
+    }
+}

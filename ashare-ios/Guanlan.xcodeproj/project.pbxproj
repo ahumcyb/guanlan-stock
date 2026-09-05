@@ -1,0 +1,249 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		014FCBD31507D8487E05FF8A /* Sources/UI/Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F028C8C54990FD1011C4AD6 /* Sources/UI/Theme.swift */; };
+		016FD123418D936E7A5E55B1 /* Sources/UI/Research.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02EACFB6CB52374C62ADF53C /* Sources/UI/Research.swift */; };
+		1FE61AB22AF235FBFA369B9E /* Sources/Core/Snapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8C78A96B7D3B2B3A2626A9 /* Sources/Core/Snapshots.swift */; };
+		29FFC48B06B5A6CC3FD01FB8 /* Sources/GuanlanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B484DD07BB4751A366DD4D2F /* Sources/GuanlanApp.swift */; };
+		31151F35D543108C25E6A282 /* Sources/UI/StockDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ABFCBF3EF4EA0ADE8BC7CBB /* Sources/UI/StockDetail.swift */; };
+		3B375482781FBF10008EE91B /* Sources/Core/MobileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 997466115754A56F7B0E8871 /* Sources/Core/MobileStore.swift */; };
+		3F975D3759B5926402C40098 /* Sources/UI/CandleChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AF95FB0F78035E9C9BA78C /* Sources/UI/CandleChart.swift */; };
+		5A360C1D59BBD56A3D8DC48E /* Sources/UI/DataScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8558BF38C38D644378A6C194 /* Sources/UI/DataScreen.swift */; };
+		7353E385ECAA9C0967E0B2D0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD12731D7BC9B843D8523E65 /* Assets.xcassets */; };
+		7B3FFC2DF2F71F1E3DE3B5AF /* Sources/Core/Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35DDF5522016B8E17DDC854 /* Sources/Core/Connection.swift */; };
+		9AE98D733B7500AF80A4EB75 /* Sources/UI/Workbench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E204B0554F80D7D935C8E2 /* Sources/UI/Workbench.swift */; };
+		D200CC0E858DA1AC01EE63E5 /* Shared Mac Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C2622AB8F472F1F4273319 /* Shared Mac Models.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		02EACFB6CB52374C62ADF53C /* Sources/UI/Research.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/Research.swift; sourceTree = "<group>"; };
+		3D8C78A96B7D3B2B3A2626A9 /* Sources/Core/Snapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/Snapshots.swift; sourceTree = "<group>"; };
+		5F028C8C54990FD1011C4AD6 /* Sources/UI/Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/Theme.swift; sourceTree = "<group>"; };
+		67E204B0554F80D7D935C8E2 /* Sources/UI/Workbench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/Workbench.swift; sourceTree = "<group>"; };
+		75C2622AB8F472F1F4273319 /* Shared Mac Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Shared Mac Models.swift"; path = "../ashare-mac/macos/Models.swift"; sourceTree = "<group>"; };
+		8558BF38C38D644378A6C194 /* Sources/UI/DataScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/DataScreen.swift; sourceTree = "<group>"; };
+		997466115754A56F7B0E8871 /* Sources/Core/MobileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/MobileStore.swift; sourceTree = "<group>"; };
+		9ABFCBF3EF4EA0ADE8BC7CBB /* Sources/UI/StockDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/StockDetail.swift; sourceTree = "<group>"; };
+		A35DDF5522016B8E17DDC854 /* Sources/Core/Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/Connection.swift; sourceTree = "<group>"; };
+		B484DD07BB4751A366DD4D2F /* Sources/GuanlanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuanlanApp.swift; sourceTree = "<group>"; };
+		BD12731D7BC9B843D8523E65 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E1AF95FB0F78035E9C9BA78C /* Sources/UI/CandleChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/CandleChart.swift; sourceTree = "<group>"; };
+		FB9EF894175C327470F768D9 /* Guanlan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Guanlan.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CE984B4DE682ABA8CF0C928B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4EDC8BFAFC6BD936B849F38C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FB9EF894175C327470F768D9 /* Guanlan.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EB814BE3CA3B78C0734C5605 = {
+			isa = PBXGroup;
+			children = (
+				A35DDF5522016B8E17DDC854 /* Sources/Core/Connection.swift */,
+				997466115754A56F7B0E8871 /* Sources/Core/MobileStore.swift */,
+				3D8C78A96B7D3B2B3A2626A9 /* Sources/Core/Snapshots.swift */,
+				B484DD07BB4751A366DD4D2F /* Sources/GuanlanApp.swift */,
+				E1AF95FB0F78035E9C9BA78C /* Sources/UI/CandleChart.swift */,
+				8558BF38C38D644378A6C194 /* Sources/UI/DataScreen.swift */,
+				02EACFB6CB52374C62ADF53C /* Sources/UI/Research.swift */,
+				9ABFCBF3EF4EA0ADE8BC7CBB /* Sources/UI/StockDetail.swift */,
+				5F028C8C54990FD1011C4AD6 /* Sources/UI/Theme.swift */,
+				67E204B0554F80D7D935C8E2 /* Sources/UI/Workbench.swift */,
+				75C2622AB8F472F1F4273319 /* Shared Mac Models.swift */,
+				BD12731D7BC9B843D8523E65 /* Assets.xcassets */,
+				4EDC8BFAFC6BD936B849F38C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		978354DB0C00FC78C3A5524F /* Guanlan */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CE9488645BD954E80511F265 /* Build configuration list for PBXNativeTarget "Guanlan" */;
+			buildPhases = (
+				C254B250C2B8ACAB56926D21 /* Sources */,
+				CE984B4DE682ABA8CF0C928B /* Frameworks */,
+				E9D7C1DC59D09A9243A83968 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Guanlan;
+			productName = Guanlan;
+			productReference = FB9EF894175C327470F768D9 /* Guanlan.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		985959785319747668373CC6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2660;
+			};
+			buildConfigurationList = 9CFF64D8AE28E83EB00193AA /* Build configuration list for PBXProject "Guanlan" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = EB814BE3CA3B78C0734C5605;
+			productRefGroup = 4EDC8BFAFC6BD936B849F38C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				978354DB0C00FC78C3A5524F /* Guanlan */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E9D7C1DC59D09A9243A83968 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7353E385ECAA9C0967E0B2D0 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C254B250C2B8ACAB56926D21 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7B3FFC2DF2F71F1E3DE3B5AF /* Sources/Core/Connection.swift in Sources */,
+				3B375482781FBF10008EE91B /* Sources/Core/MobileStore.swift in Sources */,
+				1FE61AB22AF235FBFA369B9E /* Sources/Core/Snapshots.swift in Sources */,
+				29FFC48B06B5A6CC3FD01FB8 /* Sources/GuanlanApp.swift in Sources */,
+				3F975D3759B5926402C40098 /* Sources/UI/CandleChart.swift in Sources */,
+				5A360C1D59BBD56A3D8DC48E /* Sources/UI/DataScreen.swift in Sources */,
+				016FD123418D936E7A5E55B1 /* Sources/UI/Research.swift in Sources */,
+				31151F35D543108C25E6A282 /* Sources/UI/StockDetail.swift in Sources */,
+				014FCBD31507D8487E05FF8A /* Sources/UI/Theme.swift in Sources */,
+				9AE98D733B7500AF80A4EB75 /* Sources/UI/Workbench.swift in Sources */,
+				D200CC0E858DA1AC01EE63E5 /* Shared Mac Models.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		06D9FAC4492C016BD6137653 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		49CF2059FC089A383331E989 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MLW5C7YXFJ;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = local.guanlan.ios.bennie;
+				PRODUCT_NAME = Guanlan;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		85DB3EA4977AD2ACA15445C7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MLW5C7YXFJ;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = local.guanlan.ios.bennie;
+				PRODUCT_NAME = Guanlan;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E20609128BE34B268B1C1700 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9CFF64D8AE28E83EB00193AA /* Build configuration list for PBXProject "Guanlan" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E20609128BE34B268B1C1700 /* Debug */,
+				06D9FAC4492C016BD6137653 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CE9488645BD954E80511F265 /* Build configuration list for PBXNativeTarget "Guanlan" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				49CF2059FC089A383331E989 /* Debug */,
+				85DB3EA4977AD2ACA15445C7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 985959785319747668373CC6 /* Project object */;
+}

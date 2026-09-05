@@ -1,0 +1,26 @@
+[Unit]
+Description=Guanlan private mobile data API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guanlan-api
+Group=guanlan-api
+SupplementaryGroups=guanlan-data guanlan-control
+WorkingDirectory=/opt/guanlan-app
+ExecStart=/usr/bin/python3 -m mobile_server.api --config /etc/guanlan-mobile/api.json
+Restart=on-failure
+RestartSec=5
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/guanlan-mobile/jobs /srv/guanlan-mobile/incoming
+MemoryMax=192M
+TasksMax=32
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

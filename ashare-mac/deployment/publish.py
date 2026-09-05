@@ -5,6 +5,7 @@ import grp
 import json
 import os
 import shutil
+import pwd
 from pathlib import Path
 if __package__:
     from engine.snapshot_protocol import FILE_NAMES,REVISION,validate_manifest,sha256_file,retain_snapshots
@@ -37,10 +38,14 @@ def publish(root,revision):
         if stage.exists():
             value=verify(stage,revision)
             gid=grp.getgrnam('guanlan-data').gr_gid
+            owner=os.geteuid()
+            if owner==0:
+                try:owner=pwd.getpwnam('guanlan-worker').pw_uid
+                except KeyError:pass
             for directory in [stage,stage/'raw']:
-                os.chown(directory,0,gid,follow_symlinks=False);os.chmod(directory,0o750,follow_symlinks=False)
+                os.chown(directory,owner,gid,follow_symlinks=False);os.chmod(directory,0o750,follow_symlinks=False)
             for file in [stage/'manifest.json',*(stage/'raw').iterdir()]:
-                os.chown(file,0,gid,follow_symlinks=False);os.chmod(file,0o640,follow_symlinks=False)
+                os.chown(file,owner,gid,follow_symlinks=False);os.chmod(file,0o640,follow_symlinks=False)
             if target.exists():
                 previous=verify(target,revision)
                 if previous['files']!=value['files']:raise ValueError('Existing immutable version differs')

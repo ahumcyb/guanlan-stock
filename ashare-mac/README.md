@@ -2,6 +2,8 @@
 
 本机运行的 macOS 原生 A 股短线研究软件。SwiftUI 界面，Python 独立引擎；原始行情只读，策略没有导入 quanta 的旧算法或权重。
 
+已增加 [iPhone / iPad 工程](../ashare-ios/README.md)：手机提交任务后，本机后台节点优先更新、计算并上传；只有 Mac 失联时，服务器才使用相同引擎接管。两套策略和图表按版本校验后供手机读取。后台节点登录后运行，不依赖 Mac App 窗口开启；运行维护见 [手机与 Mac 调度说明](../ashare-ios/docs/OPERATIONS.md)。
+
 ## 打开
 
 本机已安装到 **/Users/bennie/Applications/观澜选股.app**，可在 Finder 双击打开。也可以双击工程中的 **启动观澜.command**，或打开 **build/观澜选股.app**。本机已完成环境配置。

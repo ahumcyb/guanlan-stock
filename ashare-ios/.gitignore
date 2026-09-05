@@ -1,0 +1,6 @@
+.cache/
+build/
+settings/
+*.xcuserstate
+xcuserdata/
+.DS_Store

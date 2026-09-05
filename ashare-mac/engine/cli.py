@@ -14,6 +14,20 @@ import pandas as pd
 from .data import read_dataset, read_reference, source_paths, atomic_json, full_market_dates
 from .strategy import VERSION, STRATEGIES, features, classify, select_day
 from .backtest import study
+from .snapshot_protocol import validate_manifest,sha256_file
+
+
+def immutable_revision(root,overlay):
+    path=root/'manifest.json'
+    if not path.is_file():return None
+    for kind in ['daily','adj_factor','stk_limit']:
+        if source_paths(root,overlay,kind)!=[root/'raw'/(kind+'.parquet')]:return None
+    if any((overlay/'reference'/name).exists() for name in ['stock_basic.parquet','trade_cal.parquet']):return None
+    manifest=validate_manifest(json.loads(path.read_text()))
+    for entry in manifest['files']:
+        data=root/'raw'/entry['name']
+        if data.stat().st_size!=entry['bytes'] or sha256_file(data)!=entry['sha256']:raise ValueError('不可变行情版本校验失败')
+    return manifest['revision']
 
 
 def progress(message):
@@ -35,6 +49,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         except BlockingIOError:
             raise ValueError('已有选股计算正在运行') from None
         progress('读取并校验本地日线、复权因子和涨跌停价…')
+        data_revision=immutable_revision(root,overlay)
         daily = read_dataset(root, overlay, 'daily')
         if daily.empty:
             raise ValueError('找不到日线，请选择包含 raw/daily.parquet 的数据目录')
@@ -103,7 +118,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
                 start=str(dataset.trade_date.min()) if len(dataset) else '',
                 end=str(dataset.trade_date.max()) if len(dataset) else ''))
         report = dict(schema_version=1, version=VERSION, as_of=asof, generated_at=now.isoformat(),
-            strategy_id=strategy,strategy_name=STRATEGIES[strategy],
+            strategy_id=strategy,strategy_name=STRATEGIES[strategy],data_revision=data_revision,
             source_root=str(root), overlay_root=str(overlay), price_rows=len(daily),
             universe_count=len(latest), eligible_count=int(latest.eligible.sum()),
             confirmed_count=int(latest.confirmed.sum()), shortlist_count=len(shortlist),

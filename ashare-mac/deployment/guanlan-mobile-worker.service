@@ -1,0 +1,30 @@
+[Unit]
+Description=Guanlan Mac-priority coordinator and fallback worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guanlan-worker
+Group=guanlan-data
+SupplementaryGroups=guanlan-control
+WorkingDirectory=/opt/guanlan-app
+EnvironmentFile=/etc/guanlan-mobile/worker.env
+ExecStart=/opt/guanlan-app/.venv/bin/python -u -m mobile_server.coordinator --root /srv/guanlan-mobile --market-root /srv/guanlan-data
+Restart=on-failure
+RestartSec=5
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/guanlan-mobile /srv/guanlan-data
+MemoryMax=1300M
+MemorySwapMax=4G
+CPUQuota=100%
+TasksMax=64
+TimeoutStopSec=30
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

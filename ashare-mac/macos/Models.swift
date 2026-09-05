@@ -69,6 +69,7 @@ struct Report: Decodable {
     let sources: [SourceInfo]; let warnings: [String]; let stocks: [Stock]; let backtest: Study
     let lastUpdate: UpdateResult?
     let strategyId: String?; let strategyName: String?
+    let dataRevision:String?
     var isLeaders:Bool { strategyId=="leaders" }
 }
 
