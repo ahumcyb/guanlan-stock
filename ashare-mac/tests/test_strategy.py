@@ -45,6 +45,17 @@ class StrategyTests(unittest.TestCase):
         out=features(missing,market_dates=dates)
         self.assertFalse(out.iloc[-1].continuous60)
 
+    def test_unknown_strategy_rejected(self):
+        with self.assertRaises(ValueError): classify(features(bars()),strategy='unknown')
+
+    def test_leader_signals_are_point_in_time(self):
+        a=bars(120); b=bars(120); b['ts_code']='000002.SZ'; b['amount']=400000
+        full=pd.concat([a,b]); cutoff=a.trade_date.iloc[99]
+        before=classify(features(full[full.trade_date<=cutoff]),strategy='leaders')
+        after=classify(features(full),strategy='leaders')
+        columns=['ts_code','trade_date','score','confirmed','eligible','liquidity_rank']
+        pd.testing.assert_frame_equal(before[columns].reset_index(drop=True),after.loc[after.trade_date<=cutoff,columns].reset_index(drop=True))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 from .data import read_dataset, read_reference, source_paths, atomic_json
-from .strategy import VERSION, features, classify, select_day
+from .strategy import VERSION, STRATEGIES, features, classify, select_day
 from .backtest import study
 
 
@@ -24,7 +24,7 @@ def records(frame):
     return json.loads(frame.replace([np.inf,-np.inf], np.nan).to_json(orient='records', double_precision=6))
 
 
-def generate(root: Path, overlay: Path, output: Path):
+def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
     root, overlay, output = root.resolve(), overlay.resolve(), output.resolve()
     if output == root or output in root.parents or root in output.parents:
         raise ValueError('报告输出目录必须与行情源目录分离')
@@ -54,7 +54,7 @@ def generate(root: Path, overlay: Path, output: Path):
         if not set(recent.trade_date.unique()).issubset(market_dates):
             raise ValueError('日线与交易日历不一致')
         progress(f'计算 {bars.ts_code.nunique():,} 只股票的趋势、量能与风险…')
-        signals = classify(features(bars,market_dates=market_dates))
+        signals = classify(features(bars,market_dates=market_dates),strategy=strategy)
         latest = signals[signals.trade_date==asof]
         shortlist = select_day(latest)
         all_latest = signals.groupby('ts_code',sort=False).tail(1).copy()
@@ -73,7 +73,7 @@ def generate(root: Path, overlay: Path, output: Path):
         keep = ['ts_code','name','industry','trade_date','close','change','score','state','rank','eligible','stale',
                 'adjusted','limit_available','ret20','rs20','atr','volume_ratio','pullback','extension','amount20',
                 'support','breakout','invalidation','trend_ok','strength_ok','pullback_ok','volume_ok','turn_ok',
-                'strength_score','trend_score','position_score','volume_score','risk_score']
+                'strength_score','trend_score','position_score','volume_score','risk_score','liquidity_rank']
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
         backtest = study(signals, factors, limits, market_dates)
@@ -101,6 +101,7 @@ def generate(root: Path, overlay: Path, output: Path):
                 start=str(dataset.trade_date.min()) if len(dataset) else '',
                 end=str(dataset.trade_date.max()) if len(dataset) else ''))
         report = dict(schema_version=1, version=VERSION, as_of=asof, generated_at=now.isoformat(),
+            strategy_id=strategy,strategy_name=STRATEGIES[strategy],
             source_root=str(root), overlay_root=str(overlay), price_rows=len(daily),
             universe_count=len(latest), eligible_count=int(latest.eligible.sum()),
             confirmed_count=int(latest.confirmed.sum()), shortlist_count=len(shortlist),
@@ -145,8 +146,9 @@ if __name__=='__main__':
     parser.add_argument('--data-root',type=Path,required=True)
     parser.add_argument('--overlay',type=Path,default=Path(__file__).resolve().parents[1]/'data')
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--strategy',choices=STRATEGIES,default='leaders')
     a=parser.parse_args()
-    try: generate(a.data_root,a.overlay,a.output)
+    try: generate(a.data_root,a.overlay,a.output,a.strategy)
     except Exception as e:
         print(str(e) if isinstance(e,ValueError) else f'计算失败（{type(e).__name__}），旧报告已保留',flush=True)
         raise SystemExit(1)

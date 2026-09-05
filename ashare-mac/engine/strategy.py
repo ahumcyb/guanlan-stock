@@ -2,7 +2,8 @@
 import numpy as np
 import pandas as pd
 
-VERSION = 'pullback-1.0.0'
+VERSION = 'shortline-1.1.0'
+STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强'}
 
 
 def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
@@ -45,7 +46,9 @@ def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
     return x
 
 
-def classify(features_frame: pd.DataFrame) -> pd.DataFrame:
+def classify(features_frame: pd.DataFrame, strategy='pullback') -> pd.DataFrame:
+    if strategy not in STRATEGIES:
+        raise ValueError('未知策略')
     x = features_frame.copy()
     x['eligible'] = (x.ts_code.str.match(r'^(00|30|60|68)\d{4}\.(SH|SZ)$')
         & ~x.name.fillna('').str.contains('ST|退', case=False, regex=True)
@@ -77,6 +80,20 @@ def classify(features_frame: pd.DataFrame) -> pd.DataFrame:
     x.loc[~x.eligible, 'score'] = 0.
     x['support'] = x.ma20 / x.price * x.close
     x['invalidation'] = np.maximum(x.low5, x.close*(1-1.5*x.atr))
+    liquidity_ranks=eligible.groupby('trade_date').amount20.rank(method='average')
+    x['liquidity_rank']=((liquidity_ranks-.5)/sizes).reindex(x.index).fillna(0)
+    if strategy=='leaders':
+        x['strength_ok']=x.rs20>=.5
+        x['volume_ok']=x.liquidity_rank>=.8
+        x['pullback_ok']=x.extension.between(0,.08) & x.ret5.between(-.03,.12)
+        x['turn_ok']=(x.price>=x.ma10) & x.ret1.between(0,.05)
+        x['setup']=x.eligible & x.trend_ok & x.strength_ok & x.volume_ok & x.pullback_ok
+        x['confirmed']=x.setup & x.turn_ok & (x.breadth>=.4)
+        x['watch']=x.setup & ~x.turn_ok & (x.breadth>=.4)
+        x['volume_score']=((x.liquidity_rank-.8)/.2).clip(0,1)*35
+        x['position_score']=0.
+        x['score']=x[['strength_score','trend_score','volume_score','risk_score']].sum(axis=1).round(1)
+        x.loc[~x.eligible,'score']=0.
     return x
 
 

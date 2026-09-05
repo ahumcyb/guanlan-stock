@@ -1,0 +1,87 @@
+import SwiftUI
+
+struct StockDetail: View {
+    @EnvironmentObject var store: AppStore
+    let stock: Stock
+    private var isFavorite:Bool { store.favorites.contains(stock.id) }
+    var body:some View {
+        ScrollView {
+            VStack(alignment:.leading,spacing:20) {
+                HStack(alignment:.top) {
+                    VStack(alignment:.leading,spacing:5) {
+                        Text(stock.name).font(.system(size:21,weight:.semibold))
+                        Text("\(stock.tsCode)  ·  \(stock.industry)").font(.system(size:11)).foregroundStyle(Palette.muted)
+                    }
+                    Spacer()
+                    Button { store.toggleFavorite(stock) } label: {
+                        Image(systemName:isFavorite ? "star.fill":"star").foregroundStyle(isFavorite ? Palette.amber:Palette.muted)
+                    }.buttonStyle(.plain).help(isFavorite ? "移出观察列表":"加入观察列表")
+                        .accessibilityLabel(isFavorite ? "移出观察列表":"加入观察列表")
+                }
+                HStack(alignment:.firstTextBaseline,spacing:10) {
+                    Text(decimal(stock.close)).font(.system(size:30,weight:.medium,design:.rounded)).monospacedDigit()
+                    Text(String(format:"%+.2f%%",stock.change)).font(.system(size:13,weight:.medium)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down)
+                    Spacer(); Badge(text:stock.state)
+                }
+                if stock.stale { Badge(text:"行情停留在 \(dateText(stock.tradeDate))",color:Palette.amber) }
+                if !stock.adjusted || !stock.limitAvailable {
+                    Text("复权或限制价尚有缺口，更新后再核对。").font(.system(size:11)).foregroundStyle(Palette.amber)
+                }
+                if let error=store.chartError { Text(error).font(.caption).foregroundStyle(Palette.amber) }
+                else { StockChart(candles:store.candles).id(stock.id) }
+                Divider()
+                HStack {
+                    Text("条件匹配").font(.system(size:13,weight:.semibold))
+                    Spacer()
+                    Text("\(decimal(stock.score,digits:1)) / 100").font(.system(size:13,weight:.medium,design:.rounded)).foregroundStyle(Palette.teal)
+                }
+                VStack(spacing:9) {
+                    condition("趋势向上", detail:"收盘 > MA20 > MA60", ok:stock.trendOk)
+                    condition("相对强势", detail:"20 日强度前 \(decimal((1-(stock.rs20 ?? 0))*100,digits:0))%", ok:stock.strengthOk)
+                    if store.report?.isLeaders==true {
+                        condition("位置克制",detail:"高于 MA20 \(percent(stock.extension))",ok:stock.pullbackOk)
+                        condition("成交活跃",detail:"成交额前 \(decimal((1-(stock.liquidityRank ?? 0))*100,digits:0))%",ok:stock.volumeOk)
+                        condition("短期延续",detail:"收盘 ≥ MA10 且未急涨",ok:stock.turnOk)
+                    } else {
+                        condition("回踩到位", detail:"距十日高点 \(percent(stock.pullback))", ok:stock.pullbackOk)
+                        condition("量能收缩", detail:"三日 / 二十日 \(decimal(stock.volumeRatio))", ok:stock.volumeOk)
+                        condition("收盘转强", detail:"上涨且收于日内较高处", ok:stock.turnOk)
+                    }
+                }
+                if !stock.eligible {
+                    Text("未通过基础股票池条件，或当前数据不足；不参与候选排名。").font(.system(size:11)).foregroundStyle(Palette.muted)
+                }
+                Divider()
+                Text("下一交易日的观察计划").font(.system(size:13,weight:.semibold))
+                VStack(spacing:11) {
+                    priceRow("回踩参考",value:stock.support,note:"MA20 附近")
+                    priceRow("突破观察",value:stock.breakout,note:"前一交易日最高价")
+                    priceRow("失效参考",value:stock.invalidation,note:"近五日低点 / 1.5 ATR")
+                }
+                Text("仅作盘后观察。高开超过 3% 放弃追入，默认观察 3 个交易日。失效价不保证成交；历史检验未模拟盘中止损。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(4)
+                HStack {
+                    Text("ATR / 价格  \(percent(stock.atr))")
+                    Spacer()
+                    Text("20 日成交  \(decimal((stock.amount20 ?? 0)/100000,digits:1)) 亿")
+                }.font(.system(size:10)).foregroundStyle(Palette.muted)
+                Text("价格截至 \(dateText(stock.tradeDate)) 收盘").font(.system(size:9)).foregroundStyle(Palette.muted)
+            }.padding(22)
+        }.background(.white)
+    }
+    private func condition(_ title:String,detail:String,ok:Bool)->some View {
+        HStack(spacing:7) {
+            Image(systemName:ok ? "checkmark.circle.fill":"circle").foregroundStyle(ok ? Palette.teal:Palette.line)
+            Text(title).foregroundStyle(Palette.ink)
+            Spacer()
+            Text(detail).foregroundStyle(Palette.muted)
+        }.font(.system(size:10))
+    }
+    private func priceRow(_ title:String,value:Double?,note:String)->some View {
+        HStack {
+            Text(title).font(.system(size:11)).foregroundStyle(Palette.muted)
+            Text(decimal(value)).font(.system(size:14,weight:.semibold,design:.rounded)).monospacedDigit()
+            Spacer()
+            Text(note).font(.system(size:9)).foregroundStyle(Palette.muted)
+        }
+    }
+}

@@ -82,7 +82,10 @@ def update(root: Path, overlay: Path, through=None) -> dict:
                         frames[k] = local
                     else:
                         status(f'补齐 {i+1}/{len(needed)} · {date} · {k}')
-                        remote = client.fetch(k, trade_date=date, fields=','.join(FIELDS[k]))
+                        # This ProMax deployment's fields-filtered historical pages
+                        # were observed to overlap; request defaults and project
+                        # canonical columns in validate() after completeness checks.
+                        remote = client.fetch(k, trade_date=date)
                         prior=known_counts[known_counts.index<date].tail(10)
                         minimum=max(4000,int(prior.median()*.97)) if len(prior) else 4000
                         if k == 'daily' and len(remote) < minimum:
@@ -104,7 +107,7 @@ def update(root: Path, overlay: Path, through=None) -> dict:
                 else: published+=1
         failures.sort(key=lambda f:f['date'])
         status('更新股票名称与行业…')
-        basic = client.fetch('stock_basic', list_status='L', fields='ts_code,symbol,name,industry,market,list_date,list_status')
+        basic = client.fetch('stock_basic', list_status='L')
         required = ['ts_code', 'name', 'industry', 'list_date']
         if len(basic) < 4000 or not set(required).issubset(basic.columns) or basic[['ts_code', 'name', 'list_date']].isna().any().any():
             raise ValueError('股票列表不完整，保留旧列表')
