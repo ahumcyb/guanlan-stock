@@ -1,13 +1,31 @@
-import AppKit
-let bitmap=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:1024,pixelsHigh:1024,bitsPerSample:8,samplesPerPixel:3,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0)!
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current=NSGraphicsContext(bitmapImageRep:bitmap)
-NSColor(red:0.09,green:0.32,blue:0.28,alpha:1).setFill()
-NSBezierPath(rect:NSRect(x:0,y:0,width:1024,height:1024)).fill()
-let path=NSBezierPath();path.lineWidth=42;path.lineCapStyle = .round;path.lineJoinStyle = .round
-path.move(to:NSPoint(x:170,y:480))
-for point in [NSPoint(x:305,y:480),NSPoint(x:372,y:660),NSPoint(x:451,y:330),NSPoint(x:535,y:720),NSPoint(x:625,y:420),NSPoint(x:702,y:545),NSPoint(x:855,y:545)] { path.line(to:point) }
-NSColor(red:0.89,green:0.96,blue:0.87,alpha:1).setStroke();path.stroke()
-NSGraphicsContext.restoreGraphicsState()
-let data=bitmap.representation(using:.png,properties:[:])!
-try data.write(to:URL(fileURLWithPath:CommandLine.arguments[1]))
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+
+// Prepare the selected artwork for Xcode without redrawing it through AppKit.
+let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let sourceURL = root.appendingPathComponent("design/AppIconMaster.png")
+let outputURL = CommandLine.arguments.count > 1
+    ? URL(fileURLWithPath: CommandLine.arguments[1])
+    : root.appendingPathComponent("Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+
+guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+      let original = CGImageSourceCreateImageAtIndex(source, 0, nil),
+      original.width == original.height else {
+    fatalError("App icon master must be a readable square image")
+}
+let options: [CFString: Any] = [
+    kCGImageSourceCreateThumbnailFromImageAlways: true,
+    kCGImageSourceCreateThumbnailWithTransform: true,
+    kCGImageSourceThumbnailMaxPixelSize: 1024
+]
+guard let icon = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+      icon.width == 1024, icon.height == 1024,
+      let pixels = icon.dataProvider?.data,
+      Set(pixels as Data).count > 32,
+      let destination = CGImageDestinationCreateWithURL(outputURL as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+    fatalError("App icon must contain visible artwork at 1024 x 1024")
+}
+CGImageDestinationAddImage(destination, icon, nil)
+guard CGImageDestinationFinalize(destination) else { fatalError("Could not save the app icon") }
+print("App icon prepared: 1024 x 1024")
