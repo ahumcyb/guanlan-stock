@@ -36,9 +36,17 @@ struct Workbench:View {
                                     HStack { Label("盘后研究",systemImage:"sun.horizon").font(.caption);Spacer();Text(dateText(report.asOf)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                                     HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:"转强确认",value:report.confirmedCount.formatted());Metric(label:"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
                                     Picker("策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
-                                        Text("流动性趋势").tag("leaders");Text("缩量回踩").tag("pullback")
+                                        Text("流动性趋势").tag("leaders");Text("缩量回踩").tag("pullback");Text("黄金坑").tag("golden_pit")
                                     }.pickerStyle(.segmented).disabled(store.busy)
                                     HStack { Text("持有研究 1–5 日");Spacer();Text(report.regime) }.font(.caption).foregroundStyle(.secondary)
+                                    if report.isGoldenPit {
+                                        DisclosureGroup("黄金坑策略说明") {
+                                            VStack(alignment:.leading,spacing:12) {
+                                                Text(GoldenPitGuide.summary).font(.subheadline)
+                                                ForEach(GoldenPitGuide.rules,id:\.self) { Text($0).font(.caption).foregroundStyle(.secondary).lineSpacing(4) }
+                                            }.padding(.top,8)
+                                        }.font(.subheadline).tint(MobileTheme.teal)
+                                    }
                                 }.padding(.vertical,4)
                             }
                             Section {
@@ -54,7 +62,14 @@ struct Workbench:View {
                         } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? "设备内保存":"每行业最多 2 只精选") } }
                         Section { Text("研究规则尚未证明稳定优势；匹配分不代表胜率。").font(.caption).foregroundStyle(.secondary) }.listRowSeparator(.hidden)
                     }.listStyle(.plain).refreshable { await store.synchronize() }
-                } else { EmptyMessage(title:store.busy ? "正在同步你的工作台":"开始手机上的盘后研究",text:store.busy ? store.message:"到“数据”页导入连接配置，即可获取与 Mac 同源的选股结果。") }
+                } else {
+                    VStack(spacing:16) {
+                        Picker("策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
+                            Text("流动性趋势").tag("leaders");Text("缩量回踩").tag("pullback");Text("黄金坑").tag("golden_pit")
+                        }.pickerStyle(.segmented).disabled(store.busy).padding(.horizontal,16)
+                        EmptyMessage(title:store.busy ? "正在同步你的工作台":"暂未下载这套策略",text:store.busy ? store.message:"可切换其他策略，或到“数据”页同步最新结果。首次使用需导入连接配置。")
+                    }
+                }
             }
             .navigationTitle(favoritesOnly ? "我的观察":"观澜")
             .searchable(text:$query,prompt:"代码、名称或行业")

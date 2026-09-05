@@ -24,17 +24,28 @@ struct MobileStockDetail:View {
                 ResearchCard {
                     VStack(alignment:.leading,spacing:16) {
                         Text("为什么进入观察").font(.headline)
+                        if manifest.strategy=="golden_pit" {
+                            condition("长期趋势",detail:"收盘 > MA60，MA60 五日变化 \(percent(stock.ma60Slope))",passed:stock.trendOk)
+                            condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",passed:stock.strengthOk)
+                            condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",passed:stock.pullbackOk)
+                            condition("坑底缩量",detail:"底部 / 峰顶平均成交额 \(decimal(stock.pitContraction))",passed:stock.volumeOk)
+                            condition("右侧确认",detail:"收复 MA20 并收高；今日 / 前五日均额 \(decimal(stock.pitRecoveryVolume))",passed:stock.turnOk)
+                            Text("高点 \(dateText(stock.pitPeakDate ?? "—")) → 低点 \(dateText(stock.pitTroughDate ?? "—"))\n下跌 \(decimal(stock.pitFallDays,digits:0)) 日 · 距低点 \(decimal(stock.pitAge,digits:0)) 日")
+                                .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                        } else {
                         condition("趋势向上",detail:"收盘 > MA20 > MA60",passed:stock.trendOk)
                         condition("相对强势",detail:"20 日强度前 \(decimal((1-(stock.rs20 ?? 0))*100,digits:0))%",passed:stock.strengthOk)
                         condition("位置克制",detail:"高于 MA20 \(percent(stock.extension))",passed:stock.pullbackOk)
                         condition(manifest.strategy=="leaders" ? "成交活跃":"量能收缩",detail:manifest.strategy=="leaders" ? "成交额前 \(decimal((1-(stock.liquidityRank ?? 0))*100,digits:0))%":"近3日 / 20日成交额 \(decimal(stock.volumeRatio))",passed:stock.volumeOk)
                         condition("收盘确认",detail:manifest.strategy=="leaders" ? "收盘 ≥ MA10，单日未急涨":"当日上涨，收盘靠近日内高点",passed:stock.turnOk)
+                        }
                     }
                 }
                 ResearchCard {
                     VStack(alignment:.leading,spacing:14) {
                         Text("下一交易日的观察计划").font(.headline)
-                        HStack { Metric(label:"回踩参考",value:decimal(stock.support));Metric(label:"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
+                        HStack { Metric(label:"回踩参考",value:decimal(stock.support));Metric(label:manifest.strategy=="golden_pit" ? "坑口压力":"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
+                        if manifest.strategy=="golden_pit" { Text("MA20 为回踩参考，回撤前高点为坑口压力。失效参考取坑底下方 1% 与收盘价减 1.5 ATR 的较高者。").font(.caption).foregroundStyle(.secondary).lineSpacing(3) }
                         Text("高开超过 3% 放弃追入，默认研究持有 3 日。价格仅作观察参考，历史检验未模拟盘中止损。").font(.caption).foregroundStyle(.secondary).lineSpacing(3)
                         Divider()
                         HStack { Text("ATR / 价格");Spacer();Text(percent(stock.atr)) }.font(.subheadline)

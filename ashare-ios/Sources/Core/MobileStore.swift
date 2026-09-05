@@ -53,7 +53,7 @@ import Combine
         catch { self.error=error.localizedDescription }
     }
     func changeStrategy(_ value:String) {
-        guard !busy,["leaders","pullback"].contains(value),value != strategy else { return }
+        guard !busy,["leaders","pullback","golden_pit"].contains(value),value != strategy else { return }
         strategy=value;UserDefaults.standard.set(value,forKey:"mobileStrategy")
         snapshot=try? cache.load(value)
         Task { await synchronize() }

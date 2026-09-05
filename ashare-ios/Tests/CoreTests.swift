@@ -13,8 +13,28 @@ import Foundation
         try cache.save(data,manifest:manifest)
         do { try cache.save(data+Data([32]),manifest:manifest);assertionFailure("Corrupt data was accepted") } catch {}
         let cached=try cache.load("leaders");assert(cached?.manifest==manifest)
+        var cachedStrategies=["leaders"]
+        for strategy in ["pullback","golden_pit"] {
+            let folder=fixture.appendingPathComponent(strategy)
+            // Old published fixtures remain valid during a staged app/server update.
+            guard FileManager.default.fileExists(atPath:folder.appendingPathComponent("manifest.json").path) else { continue }
+            let other=try mobileDecoder().decode(MobileManifest.self,from:Data(contentsOf:folder.appendingPathComponent("manifest.json")))
+            let snapshot=try cache.save(Data(contentsOf:folder.appendingPathComponent("report.json")),manifest:other)
+            cachedStrategies.append(strategy)
+            assert(snapshot.report.strategyId==strategy)
+            if strategy=="golden_pit" {
+                assert(snapshot.report.isGoldenPit)
+                for stock in snapshot.report.stocks where stock.state=="入选" {
+                    assert(stock.pitPeakDate!<stock.pitTroughDate! && stock.pitTroughDate!<stock.tradeDate)
+                    assert((0.08...0.20).contains(stock.pitDepth!))
+                }
+            }
+        }
+        for strategy in cachedStrategies {
+            let saved=try cache.load(strategy);assert(saved?.report.strategyId==strategy)
+        }
         do { _=try cache.chartURL(manifest,code:"../../secret");assertionFailure("Traversal was accepted") } catch {}
-        let code=report.stocks.first(where:{$0.rank==1})!.id
+        let code=(report.stocks.first(where:{$0.rank==1}) ?? report.stocks[0]).id
         let chart=try Data(contentsOf:fixture.appendingPathComponent("charts/\(code).json"))
         let candles=try cache.saveChart(chart,manifest:manifest,code:code)
         assert(!candles.isEmpty && candles.count<=120)
@@ -22,7 +42,7 @@ import Foundation
         do { _=try decodeCandles(Data("[]".utf8),asOf:manifest.asOf);assertionFailure("Empty chart accepted") } catch {}
         assert(csvCell("=SUM(A1:A2)").hasPrefix("\"'="))
         assert(csvCell("-1.25")=="\"-1.25\"")
-        print("Native model/cache/CSV checks passed · \(report.stocks.count) stocks · \(report.asOf)")
+        print("Native model/cache/CSV checks passed · \(cachedStrategies.joined(separator:",")) · \(report.stocks.count) stocks · \(report.asOf)")
         if CommandLine.arguments.count>2 {
             let pairing=try JSONDecoder().decode(Pairing.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2])))
             let invalid=Pairing(endpoint:"https://example.invalid",token:pairing.token,certificate:pairing.certificate)
