@@ -1,0 +1,155 @@
+{
+  "run": "run-20260905-v3",
+  "simulation_files_reconciled": 29,
+  "records": [
+    {
+      "path": "train/breakout_20.json",
+      "sha256": "4d0b99c7ec4474249fec522bbe9de85e5a6240675925eee5e12d0526e0fb4fd4",
+      "phases": 3
+    },
+    {
+      "path": "train/liquidity.json",
+      "sha256": "d191ab6b55d52c91854eb6c4b20ab889cf96132c062239ab6d2e8dd4e387d009",
+      "phases": 3
+    },
+    {
+      "path": "train/low_vol_20.json",
+      "sha256": "50dbffe8cfc17d7f1a4bbb91ebb98939012ea4fef1a400ba44bce638c12f02c5",
+      "phases": 3
+    },
+    {
+      "path": "train/low_vol_60.json",
+      "sha256": "1ed564eb3b8ede4c43dcba2c1be1a486a98d2daee6957cd5ac090776bed20225",
+      "phases": 3
+    },
+    {
+      "path": "train/low_vol_reversal.json",
+      "sha256": "32351bc18ec323dd9e3ee54006de7ec8e067549dc82191412492f77f366d82c6",
+      "phases": 3
+    },
+    {
+      "path": "train/momentum_20.json",
+      "sha256": "c0627a1a42f51aba3b9ca56ba07414af9170fd33bc425a09ea72d86e4c22cd24",
+      "phases": 3
+    },
+    {
+      "path": "train/momentum_60.json",
+      "sha256": "624b447c1b6221f7e2f5d5779d993489bd825600cb3a3055fea9d53d71f7f568",
+      "phases": 3
+    },
+    {
+      "path": "train/reversal_3.json",
+      "sha256": "6e35b9ccf206d4738863ad012c80b2d022541e2df1a141019fd90473a8dfcc2e",
+      "phases": 3
+    },
+    {
+      "path": "train/reversal_5.json",
+      "sha256": "053bcc72be29e0c259b51f7bc0cd11c4411bcfede6a1f50247f94443d97cef39",
+      "phases": 3
+    },
+    {
+      "path": "validation/breakout_20.json",
+      "sha256": "2d63289d259a5d074a953c365e65e5e0c78a6e75797999b5b2aeb3855941030c",
+      "phases": 3
+    },
+    {
+      "path": "validation/liquidity.json",
+      "sha256": "96a08ac5d42225fe66456dda384364f19f7a87c24daea8078af3e615b30929be",
+      "phases": 3
+    },
+    {
+      "path": "validation/low_vol_20.json",
+      "sha256": "02f7e3e607ce56b9bcf7541b21720ea6cb86a5470be7509dabce2ce9aac128a5",
+      "phases": 3
+    },
+    {
+      "path": "validation/low_vol_60.json",
+      "sha256": "ef4931f7f632c438a7e38612d1e481da691a1d38de63ed2854a371a13ecc6468",
+      "phases": 3
+    },
+    {
+      "path": "validation/low_vol_reversal.json",
+      "sha256": "28aaf71ff997adbc7e381086d5a3ccaf33ffac1172beacdbd09e9a9e06a1222f",
+      "phases": 3
+    },
+    {
+      "path": "validation/momentum_20.json",
+      "sha256": "5bb571fd7081d31c7a9176107fbb70bd884f3ed956b56d029c889d833f76af26",
+      "phases": 3
+    },
+    {
+      "path": "validation/momentum_60.json",
+      "sha256": "72939d4decb68de9067c2571c77b0985008a13ad478bcab3cbaba4ebdf2f9087",
+      "phases": 3
+    },
+    {
+      "path": "validation/reversal_3.json",
+      "sha256": "698e3af109e5b6782ce97f620859011d15893b4cccec3c34113a832ab099c08e",
+      "phases": 3
+    },
+    {
+      "path": "validation/reversal_5.json",
+      "sha256": "dd1971568f04be1b4c9e831901d68bc0794bf1cb479b4878bb8465396d6952cb",
+      "phases": 3
+    },
+    {
+      "path": "holdout/legacy_golden_pit.json",
+      "sha256": "ef6996319dbe65627c83bb68d7667b28866a6dc2082d89d19e9e37a2f2bf4623",
+      "phases": 3
+    },
+    {
+      "path": "holdout/legacy_leaders.json",
+      "sha256": "5ec0b848ee3470a8761cc06196ce9ec0d8d8a00601ac47c0a3667f0ce7b0f79f",
+      "phases": 3
+    },
+    {
+      "path": "holdout/legacy_pullback.json",
+      "sha256": "3f7774e9b40d6170636526a5f6ab4bc094da31490e9c0a6fdc96199c8f3faa82",
+      "phases": 3
+    },
+    {
+      "path": "holdout/liquidity.json",
+      "sha256": "785b65eb1c470de289f1b7274c6526ee7f958b6ffb62ce3fe10ad490e957f79a",
+      "phases": 3
+    },
+    {
+      "path": "holdout/momentum_20.json",
+      "sha256": "8f58b84d32d47f2b9fd1326cdde655cc685f52a6764756c87a7dd4faad001e9a",
+      "phases": 3
+    },
+    {
+      "path": "stress/liquidity.json",
+      "sha256": "dd2574067786ad15901cd1a019bf9edad75b46f4a25af08223201b3f4d657cfc",
+      "phases": 3
+    },
+    {
+      "path": "stress/momentum_20.json",
+      "sha256": "c1de7555b38feef533207b4d9e76e466977561f610647cb478c750b5f2464b30",
+      "phases": 3
+    },
+    {
+      "path": "horizon-1/liquidity.json",
+      "sha256": "b5b7c8b1d96845e84c8f045e453506cd103da7209482507aef405b79167c24f4",
+      "phases": 1
+    },
+    {
+      "path": "horizon-1/momentum_20.json",
+      "sha256": "bb577724b2696cd5a9f0f1da2145f7fcae2d4c4983102b1c491bfa00f79b8991",
+      "phases": 1
+    },
+    {
+      "path": "horizon-5/liquidity.json",
+      "sha256": "242469c1a22018e1d217b5dcf0e912732ee0e7047a4c9677a2d560f23f51c182",
+      "phases": 5
+    },
+    {
+      "path": "horizon-5/momentum_20.json",
+      "sha256": "5dc144da458399bef974f33731031eef54782a68d90ad2c6ace435d858485755",
+      "phases": 5
+    }
+  ],
+  "archive_sha256": "0376cdb6195730e834652cd6c8eacc547d5e0348fb52071008b4e308df55d553",
+  "capital_per_phase": 100000,
+  "frozen_sha256": "7d4f40fa71f4022bef63dbb6c114e5fb78957bcf9d987a4b66882874bedd3e9b",
+  "selection_sha256": "db2b7d599f9c81270e1e666292b98aed24b4c802a47f87976f0a054b2818eb2f"
+}

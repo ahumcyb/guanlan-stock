@@ -11,6 +11,7 @@
 | [实时策略](ashare-mac/docs/REALTIME_STRATEGIES.md) | 两篇来源的规则定义、行情时间与覆盖校验 |
 | [实时运行与通知](ashare-mac/docs/REALTIME_OPERATIONS.md) | 定时执行、Bark 配置、可选 DeepSeek、103项测试及手机通知验证 |
 | [黄金坑盘后策略](ashare-mac/docs/GOLDEN_PIT.md) | 峰谷顺序、缩量与右侧确认；三策略同步、116 项测试及两端计算一致性 |
+| [10 万元短线策略研究](ashare-mac/research/reports/20260905/README.md) | 八候选未通过门槛；历史 ST / 涨跌停约束、资金账本、145 项测试、封存结果及逐笔导出 |
 
 ## 工程与数据
 
