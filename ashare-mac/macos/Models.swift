@@ -1,5 +1,11 @@
 import Foundation
 
+func sameDataDirectory(_ lhs:String,_ rhs:String)->Bool {
+    // URL equality distinguishes trailing directory slashes after symlink resolution.
+    URL(fileURLWithPath:lhs).standardizedFileURL.resolvingSymlinksInPath().path
+        == URL(fileURLWithPath:rhs).standardizedFileURL.resolvingSymlinksInPath().path
+}
+
 struct SnapshotPointer: Decodable { let generation: String; let asOf: String; let sha256: String }
 struct Runtime: Codable { let projectRoot: String; let python: String }
 struct SourceInfo: Decodable, Identifiable {

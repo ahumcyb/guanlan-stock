@@ -17,12 +17,22 @@ import UniformTypeIdentifiers
     @Published var chartError: String?
     @Published var historyLog = ""
     @Published var strategy: String
+    @Published var remoteEnabled: Bool
     let runtime: Runtime
     let output: URL
     let overlay: URL
     private var process: Process?
     private var generation: URL?
     private var cancelled = false
+    var serverConfig:URL { URL(fileURLWithPath:runtime.projectRoot).appendingPathComponent("settings/server.json") }
+    var serverCache:URL { URL(fileURLWithPath:runtime.projectRoot).appendingPathComponent(".cache/server-data") }
+    var serverConfigured:Bool { FileManager.default.fileExists(atPath:serverConfig.path) }
+    var activeDataRoot:String { remoteEnabled ? serverCache.appendingPathComponent("current").path:dataRoot }
+    var activeOverlay:String { remoteEnabled ? URL(fileURLWithPath:runtime.projectRoot).appendingPathComponent(".cache/server-overlay").path:overlay.path }
+    var serverHost:String {
+        guard let data=try? Data(contentsOf:serverConfig),let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return "未配置" }
+        return value["host"] as? String ?? "未配置"
+    }
     private let decoder: JSONDecoder = {
         let d = JSONDecoder(); d.keyDecodingStrategy = .convertFromSnakeCase; return d
     }()
@@ -40,7 +50,9 @@ import UniformTypeIdentifiers
             ?? URL(fileURLWithPath: runtime.projectRoot).deletingLastPathComponent().appendingPathComponent("data").path
         favorites = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
         strategy = UserDefaults.standard.string(forKey:"strategy") ?? "leaders"
-        if !loadReport() { run(update: false) }
+        remoteEnabled = UserDefaults.standard.object(forKey:"useServerData") as? Bool
+            ?? FileManager.default.fileExists(atPath:runtime.projectRoot+"/settings/server.json")
+        if !loadReport() { run(update:remoteEnabled) }
     }
 
     @discardableResult func loadReport() -> Bool {
@@ -54,7 +66,7 @@ import UniformTypeIdentifiers
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             guard hash == pointer.sha256 else { throw CocoaError(.fileReadCorruptFile) }
             let r = try decoder.decode(Report.self, from: data)
-            guard r.schemaVersion == 1, URL(fileURLWithPath:r.sourceRoot).standardized == URL(fileURLWithPath:dataRoot).standardized else { return false }
+            guard r.schemaVersion == 1, sameDataDirectory(r.sourceRoot,activeDataRoot) else { return false }
             guard (r.strategyId ?? "pullback")==strategy else { return false }
             report = r; generation = folder
             progress = "已载入 \(dateText(r.asOf)) 收盘数据"
@@ -86,16 +98,19 @@ import UniformTypeIdentifiers
     func run(update: Bool) {
         guard !busy else { return }
         error = nil; cancelled = false; busy = true; historyLog = ""
-        launch(module: update ? "engine.update" : "engine.cli")
+        let missingCache=remoteEnabled && !FileManager.default.fileExists(atPath:activeDataRoot+"/manifest.json")
+        launch(module:(update || missingCache) ? (remoteEnabled ? "engine.remote":"engine.update"):"engine.cli")
     }
 
     private func launch(module: String) {
-        activity = module == "engine.update" ? "更新数据" : "选股计算"
-        progress = module == "engine.update" ? "连接 ProMax…" : "读取本地日线…"
+        activity = module == "engine.remote" ? "同步服务器":(module == "engine.update" ? "更新数据" : "选股计算")
+        progress = module == "engine.remote" ? "连接行情服务器…":(module == "engine.update" ? "连接 ProMax…" : "读取日线缓存…")
         let task = Process(); let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: runtime.python)
         task.currentDirectoryURL = URL(fileURLWithPath:runtime.projectRoot)
-        task.arguments = ["-u", "-m", module, "--data-root", dataRoot, "--overlay", overlay.path]
+        task.arguments = module == "engine.remote"
+            ? ["-u","-m",module,"--config",serverConfig.path,"--cache",serverCache.path]
+            : ["-u", "-m", module, "--data-root", activeDataRoot, "--overlay", activeOverlay]
         if module == "engine.cli" { task.arguments! += ["--output",output.path,"--strategy",strategy] }
         task.standardOutput = pipe; task.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -115,7 +130,7 @@ import UniformTypeIdentifiers
                 if let text = String(data:tail,encoding:.utf8), !text.isEmpty { self.historyLog += text }
                 self.process = nil
                 if self.cancelled { self.busy=false; self.progress="已取消，保留上次结果"; return }
-                if task.terminationStatus == 0 && module == "engine.update" {
+                if task.terminationStatus == 0 && ["engine.update","engine.remote"].contains(module) {
                     self.launch(module:"engine.cli")
                 } else {
                     self.busy = false
@@ -134,6 +149,16 @@ import UniformTypeIdentifiers
     }
 
     func cancel() { cancelled = true; process?.terminate() }
+
+    func retry() { run(update:activity != "选股计算") }
+
+    func changeDataSource(_ useServer:Bool) {
+        guard !busy, useServer != remoteEnabled else { return }
+        guard !useServer || serverConfigured else { error="服务器连接尚未配置。";return }
+        remoteEnabled=useServer;UserDefaults.standard.set(useServer,forKey:"useServerData")
+        report=nil;generation=nil;selection=nil;candles=[]
+        run(update:useServer)
+    }
 
     func changeStrategy(_ value:String) {
         guard !busy, value != strategy else { return }

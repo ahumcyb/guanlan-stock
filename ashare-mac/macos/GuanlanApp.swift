@@ -47,7 +47,7 @@ struct RootView:View {
                         Image(systemName:"exclamationmark.circle")
                         Text(error).lineLimit(3).textSelection(.enabled)
                         Spacer()
-                        Button("重试") { store.run(update:store.activity=="更新数据") }.disabled(store.busy)
+                        Button("重试") { store.retry() }.disabled(store.busy)
                         Button { store.error=nil } label: { Image(systemName:"xmark") }.buttonStyle(.plain).accessibilityLabel("关闭错误提示")
                     }.font(.system(size:11)).foregroundStyle(Palette.amber).padding(12).background(Palette.amber.opacity(0.07))
                 }
@@ -97,7 +97,7 @@ struct RootView:View {
                 Rectangle().fill(Palette.line).frame(height:1).padding(.bottom,6)
                 HStack(spacing:6) { Circle().fill(Palette.teal).frame(width:5,height:5); Text("本机研究引擎").font(.system(size:10)) }
                 Text("短线 1–5 日\n让每个判断都有依据。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(6)
-                Text("v1.0  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
+                Text("v1.1  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
             }.padding(24)
         }
     }
@@ -111,7 +111,7 @@ struct RootView:View {
             }
             Button { store.run(update:false) } label: { Label("重新选股",systemImage:"arrow.clockwise") }
                 .controlSize(.small).disabled(store.busy)
-            Button { store.run(update:true) } label: { Label("更新数据",systemImage:"arrow.down.to.line") }
+            Button { store.run(update:true) } label: { Label(store.remoteEnabled ? "同步服务器":"更新数据",systemImage:"arrow.down.to.line") }
                 .buttonStyle(.borderedProminent).tint(Palette.teal).controlSize(.small).disabled(store.busy)
         }.padding(.horizontal,24).frame(height:62)
     }
