@@ -169,6 +169,11 @@ struct StrategyView:View {
                 Divider().padding(.vertical,10)
                 Text("盘后研究策略").font(.system(size:20,weight:.semibold))
                 Panel { VStack(alignment:.leading,spacing:13) {
+                    HStack { Text("黄金坑").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增") }
+                    Text(GoldenPitGuide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)
+                    ForEach(GoldenPitGuide.rules,id:\.self) { Text($0).font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5) }
+                } }
+                Panel { VStack(alignment:.leading,spacing:13) {
                     HStack { Text("流动性趋势").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"默认方案") }
                     Text("在基础池中选择 20 日成交额前 20%、20 日相对强度前 50% 的股票。收盘 > MA20 > MA60，MA20 向上；高于 MA20 不超过 8%，5 日涨幅在 -3% 至 12%。收盘不低于 MA10 且单日涨幅 0–5% 时确认。市场宽度至少 40%。").font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5)
                     Text("评分：流动性 35、相对强度 30、趋势 20、低波动 15。与回踩模型共用基础池、次日执行和费用假设。增加此模型源于首版回踩检验未占优；因此后续历史结果仍属于探索性研究，不能冒称独立样本外。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)

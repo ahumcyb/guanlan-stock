@@ -73,7 +73,7 @@ class MobileAPITests(unittest.TestCase):
 
     def outputs(self):
         outputs=self.root/'outputs'
-        for strategy in ['leaders','pullback']:
+        for strategy in ['leaders','pullback','golden_pit']:
             folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True)
             report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[{'ts_code':'000001.SZ'}],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
             atomic_json(folder/'report.json',report);atomic_json(folder/'charts/000001.SZ.json',[{'date':'20260904'}])
@@ -100,3 +100,19 @@ class MobileAPITests(unittest.TestCase):
         path=self.root/'releases'/manifest['generation']/'charts/000001.SZ.json'
         path.unlink();path.symlink_to(self.root/'jobs/capabilities.json')
         with self.assertRaises(ValueError):self.call('GET',f"/v1/reports/leaders/{manifest['generation']}/charts/000001.SZ.json")
+
+    def test_golden_pit_is_served_and_its_chart_must_match(self):
+        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        manifest=self.call('GET','/v1/reports/golden_pit/current')[1]
+        self.assertEqual(manifest['generation'],first['leaders']['generation'])
+        chart=outputs/'golden_pit/20260905T120000-abcdef/charts/000001.SZ.json'
+        chart.write_text('[{"date":"20260904","close":999}]')
+        with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        self.assertEqual(current_manifest(self.root,'golden_pit'),first['golden_pit'])
+
+    def test_old_release_remains_readable_before_third_strategy_is_published(self):
+        publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')
+        import shutil
+        shutil.rmtree(self.root/'current/golden_pit')
+        status=self.call('GET','/v1/status')[1]
+        self.assertEqual(set(status['reports']),{'leaders','pullback'})

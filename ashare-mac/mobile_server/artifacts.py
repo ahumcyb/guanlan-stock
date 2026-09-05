@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from engine.snapshot_protocol import REVISION
 
-STRATEGIES=('leaders','pullback')
+STRATEGIES=('leaders','pullback','golden_pit')
 GENERATION=re.compile(r'^\d{8}T\d{6}-[a-f0-9]{6}$')
 CODE=re.compile(r'^\d{6}\.(SH|SZ|BJ)$')
 MAX_REPORT=12*1024*1024
@@ -42,7 +42,7 @@ def read_generation(output):
 
 
 def publish(outputs,root,data_revision):
-    """Publish BOTH strategies and shared charts with one atomic pointer change."""
+    """Publish every strategy and shared charts with one atomic pointer change."""
     if not REVISION.fullmatch(data_revision):raise ValueError('Invalid market revision')
     root=root.resolve();releases=root/'releases';releases.mkdir(parents=True,exist_ok=True)
     generation=time.strftime('%Y%m%dT%H%M%S')+'-'+os.urandom(3).hex()
@@ -70,8 +70,10 @@ def publish(outputs,root,data_revision):
         (stage/'charts').mkdir()
         for code in sorted(codes):
             source=checked_file(chart_sources[0],chart_sources[0]/(code+'.json'),MAX_CHART)
-            other=checked_file(chart_sources[1],chart_sources[1]/(code+'.json'),MAX_CHART)
-            if hashlib.sha256(source.read_bytes()).digest()!=hashlib.sha256(other.read_bytes()).digest():raise ValueError('Strategy charts do not match')
+            digest=hashlib.sha256(source.read_bytes()).digest()
+            for chart_root in chart_sources[1:]:
+                other=checked_file(chart_root,chart_root/(code+'.json'),MAX_CHART)
+                if digest!=hashlib.sha256(other.read_bytes()).digest():raise ValueError('Strategy charts do not match')
             candles=json.loads(source.read_text())
             if not isinstance(candles,list) or not 1<=len(candles)<=120:raise ValueError('Invalid chart')
             shutil.copyfile(source,stage/'charts'/(code+'.json'))

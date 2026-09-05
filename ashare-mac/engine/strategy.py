@@ -2,8 +2,8 @@
 import numpy as np
 import pandas as pd
 
-VERSION = 'shortline-1.1.0'
-STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强'}
+VERSION = 'shortline-1.2.0'
+STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑'}
 
 
 def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
@@ -94,6 +94,9 @@ def classify(features_frame: pd.DataFrame, strategy='pullback') -> pd.DataFrame:
         x['position_score']=0.
         x['score']=x[['strength_score','trend_score','volume_score','risk_score']].sum(axis=1).round(1)
         x.loc[~x.eligible,'score']=0.
+    if strategy == 'golden_pit':
+        from .golden_pit import classify_pit
+        return classify_pit(x)
     return x
 
 

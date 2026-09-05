@@ -36,6 +36,15 @@ struct StockDetail: View {
                     Text("\(decimal(stock.score,digits:1)) / 100").font(.system(size:13,weight:.medium,design:.rounded)).foregroundStyle(Palette.teal)
                 }
                 VStack(spacing:9) {
+                    if store.report?.isGoldenPit==true {
+                        condition("长期趋势",detail:"MA60 五日变化 \(percent(stock.ma60Slope))",ok:stock.trendOk)
+                        condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",ok:stock.strengthOk)
+                        condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",ok:stock.pullbackOk)
+                        condition("坑底缩量",detail:"底部 / 峰顶均额 \(decimal(stock.pitContraction))",ok:stock.volumeOk)
+                        condition("右侧确认",detail:"今日 / 前五日均额 \(decimal(stock.pitRecoveryVolume))",ok:stock.turnOk)
+                        Text("高点 \(dateText(stock.pitPeakDate ?? "—")) → 低点 \(dateText(stock.pitTroughDate ?? "—")) · 距低点 \(decimal(stock.pitAge,digits:0)) 日")
+                            .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
+                    } else {
                     condition("趋势向上", detail:"收盘 > MA20 > MA60", ok:stock.trendOk)
                     condition("相对强势", detail:"20 日强度前 \(decimal((1-(stock.rs20 ?? 0))*100,digits:0))%", ok:stock.strengthOk)
                     if store.report?.isLeaders==true {
@@ -47,6 +56,7 @@ struct StockDetail: View {
                         condition("量能收缩", detail:"三日 / 二十日 \(decimal(stock.volumeRatio))", ok:stock.volumeOk)
                         condition("收盘转强", detail:"上涨且收于日内较高处", ok:stock.turnOk)
                     }
+                    }
                 }
                 if !stock.eligible {
                     Text("未通过基础股票池条件，或当前数据不足；不参与候选排名。").font(.system(size:11)).foregroundStyle(Palette.muted)
@@ -55,8 +65,8 @@ struct StockDetail: View {
                 Text("下一交易日的观察计划").font(.system(size:13,weight:.semibold))
                 VStack(spacing:11) {
                     priceRow("回踩参考",value:stock.support,note:"MA20 附近")
-                    priceRow("突破观察",value:stock.breakout,note:"信号日最高价")
-                    priceRow("失效参考",value:stock.invalidation,note:"近五日低点 / 1.5 ATR")
+                    priceRow(store.report?.isGoldenPit==true ? "坑口压力":"突破观察",value:stock.breakout,note:store.report?.isGoldenPit==true ? "回撤前高点":"信号日最高价")
+                    priceRow("失效参考",value:stock.invalidation,note:store.report?.isGoldenPit==true ? "坑底下方 1% / 1.5 ATR 较高者":"近五日低点 / 1.5 ATR")
                 }
                 Text("仅作盘后观察。高开超过 3% 放弃追入，默认观察 3 个交易日。失效价不保证成交；历史检验未模拟盘中止损。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(4)
                 HStack {

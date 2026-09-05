@@ -89,6 +89,9 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
                 'adjusted','limit_available','ret20','rs20','atr','volume_ratio','pullback','extension','amount20',
                 'support','breakout','invalidation','trend_ok','strength_ok','pullback_ok','volume_ok','turn_ok',
                 'strength_score','trend_score','position_score','volume_score','risk_score','liquidity_rank']
+        if strategy == 'golden_pit':
+            from .golden_pit import METRICS
+            keep += METRICS
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
         backtest = study(signals, factors, limits, market_dates)

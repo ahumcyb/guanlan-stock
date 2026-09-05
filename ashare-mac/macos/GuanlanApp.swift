@@ -98,7 +98,7 @@ struct RootView:View {
                 Rectangle().fill(Palette.line).frame(height:1).padding(.bottom,6)
                 HStack(spacing:6) { Circle().fill(Palette.teal).frame(width:5,height:5); Text("本机研究引擎").font(.system(size:10)) }
                 Text("短线 1–5 日\n让每个判断都有依据。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(6)
-                Text("v1.2  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
+                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
             }.padding(24)
         }
     }

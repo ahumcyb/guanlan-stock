@@ -7,7 +7,7 @@ import sys
 import zipfile
 from pathlib import Path
 from engine.snapshot_protocol import validate_manifest
-from .artifacts import publish,atomic_json
+from .artifacts import STRATEGIES,publish,atomic_json
 
 
 def build(root,overlay,work,action):
@@ -22,7 +22,7 @@ def build(root,overlay,work,action):
     empty=work/'report-overlay';empty.mkdir(exist_ok=True)
     if (overlay/'last_update.json').is_file():atomic_json(empty/'last_update.json',json.loads((overlay/'last_update.json').read_text()))
     outputs=work/'reports'
-    for strategy in ['leaders','pullback']:
+    for strategy in STRATEGIES:
         run('engine.cli','--data-root',market,'--overlay',empty,'--output',outputs/strategy,'--strategy',strategy)
     manifests=publish(outputs,work/'mobile',revision)
     generation=manifests['leaders']['generation'];research=work/'mobile/releases'/generation
@@ -34,7 +34,7 @@ def build(root,overlay,work,action):
                 if path.is_file() and not path.is_symlink():archive.write(path,prefix+'/'+path.relative_to(folder).as_posix())
     if temporary.stat().st_size>256*1024*1024:raise ValueError('Mobile bundle exceeds transfer limit')
     os.replace(temporary,bundle)
-    print(f'两套策略已生成，待上传结果包 {bundle.stat().st_size/1024/1024:.1f} MiB',flush=True)
+    print(f'{len(STRATEGIES)} 套盘后策略已生成，待上传结果包 {bundle.stat().st_size/1024/1024:.1f} MiB',flush=True)
     return bundle
 
 

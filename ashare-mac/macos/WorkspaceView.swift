@@ -61,7 +61,7 @@ struct WorkspaceView:View {
             if !favoritesOnly {
                 Picker("筛选策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
                     Text("流动性趋势").tag("leaders")
-                    Text("缩量回踩转强").tag("pullback")
+                    Text("缩量回踩转强").tag("pullback"); Text("黄金坑").tag("golden_pit")
                 }.pickerStyle(.segmented).font(.system(size:11)).disabled(store.busy)
             }
             if let report=store.report {

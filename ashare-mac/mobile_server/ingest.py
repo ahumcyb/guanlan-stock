@@ -110,7 +110,7 @@ def activate(bundle,root,market_root,queue,job):
             pointer=root/('.current-'+os.urandom(4).hex());pointer.symlink_to(Path('releases')/metadata['generation']);os.replace(pointer,root/'current')
             if old and old.is_dir() and old!=release:os.utime(old,None)
             state={k:v for k,v in state.items() if k in {'id','request_id','action','created_at','executor'}}
-            state.update(status='completed',message='已发布 '+metadata['data_revision'][:8]+' · 两套策略及 K 线校验通过');queue.save(state)
+            state.update(status='completed',message='已发布 '+metadata['data_revision'][:8]+f' · {len(STRATEGIES)} 套盘后策略及 K 线校验通过');queue.save(state)
         versions=sorted([p for p in (root/'releases').iterdir() if GENERATION.fullmatch(p.name) and p.is_dir() and not p.is_symlink()],key=lambda p:p.stat().st_mtime,reverse=True)
         protected={metadata['generation'],*[p.name for p in versions if p!=release][:2]}
         for path in versions:
