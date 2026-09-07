@@ -31,6 +31,13 @@ struct MobileStockDetail:View {
                             condition("波动数据完整",detail:"60 日日收益波动 \(percent(stock.vol60))",passed:stock.pullbackOk)
                             condition("当日克制",detail:"当天涨幅不超过 5%",passed:stock.turnOk)
                             Text("原始动量比值 \(decimal(stock.momentumRatio))\n首页分数为候选内相对排名，不是胜率。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                        } else if manifest.strategy=="left_rebound" {
+                            condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))，跌幅不超过3%",passed:stock.trendOk)
+                            condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))，最近5日下跌3%–12%",passed:stock.strengthOk)
+                            condition("低位区域",detail:"60日回撤 \(percent(stock.leftDrawdown60)) · 距20日低价 \(percent(stock.leftDistanceLow20))",passed:stock.pullbackOk)
+                            condition("量能收敛",detail:"当日 / 前五日均量 \(decimal(stock.leftVolume5))",passed:stock.volumeOk)
+                            condition("抛压收敛",detail:"涨跌-4%至+2%，收于振幅上部60%且未封跌停",passed:stock.turnOk)
+                            Text("这是左侧观察条件，尚未要求收复 MA10 或放量转强。").font(.caption).foregroundStyle(.secondary)
                         } else if manifest.strategy=="golden_pit" {
                             condition("长期趋势",detail:"收盘 > MA60，MA60 五日变化 \(percent(stock.ma60Slope))",passed:stock.trendOk)
                             condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",passed:stock.strengthOk)
@@ -51,7 +58,8 @@ struct MobileStockDetail:View {
                 ResearchCard {
                     VStack(alignment:.leading,spacing:14) {
                         Text("下一交易日的观察计划").font(.headline)
-                        HStack { Metric(label:manifest.strategy=="momentum_60" ? "趋势参考 MA60":"回踩参考",value:decimal(stock.support));Metric(label:manifest.strategy=="golden_pit" ? "坑口压力":"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
+                        HStack { Metric(label:manifest.strategy=="left_rebound" ? "20日低价参考":(manifest.strategy=="momentum_60" ? "趋势参考 MA60":"回踩参考"),value:decimal(stock.support));Metric(label:manifest.strategy=="golden_pit" ? "坑口压力":"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
+                        if manifest.strategy=="left_rebound" { Text("失效参考取20日低价下方2%与收盘价减2 ATR的较高者；尚未模拟盘中止损。").font(.caption).foregroundStyle(.secondary) }
                         if manifest.strategy=="golden_pit" { Text("MA20 为回踩参考，回撤前高点为坑口压力。失效参考取坑底下方 1% 与收盘价减 1.5 ATR 的较高者。").font(.caption).foregroundStyle(.secondary).lineSpacing(3) }
                         Text("高开超过 3% 放弃追入，默认研究持有 3 日。价格仅作观察参考，历史检验未模拟盘中止损。").font(.caption).foregroundStyle(.secondary).lineSpacing(3)
                         Divider()

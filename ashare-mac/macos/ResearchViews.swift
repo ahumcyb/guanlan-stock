@@ -174,10 +174,9 @@ struct StrategyView:View {
                 Divider().padding(.vertical,10)
                 Text("盘后研究策略").font(.system(size:20,weight:.semibold))
                 Panel { VStack(alignment:.leading,spacing:13) {
-                    HStack { Text("60 日风险调整动量").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增 · 研究",color:Palette.amber) }
-                    Text(Momentum60Guide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)
-                    Text(Momentum60Guide.evidence).font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(5)
-                    ForEach(Momentum60Guide.rules,id:\.self) { Text($0).font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5) }
+                    HStack { Text("左侧低吸").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增 · 研究",color:Palette.amber) }
+                    Text(LeftReboundGuide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)
+                    ForEach(LeftReboundGuide.rules,id:\.self) { Text($0).font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5) }
                 } }
                 Panel { VStack(alignment:.leading,spacing:13) {
                     HStack { Text("黄金坑").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增") }

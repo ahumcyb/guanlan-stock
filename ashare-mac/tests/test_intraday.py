@@ -26,6 +26,11 @@ class IntradayTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises((ValueError, TypeError)):
                 normalize_quote(dict(self.row, **changes), self.now)
 
+    def test_missing_trade_date_still_accepts_explicit_source_updated_time(self):
+        quote=normalize_quote(dict(self.row,trade_time=None),self.now)
+        self.assertEqual(quote['time_basis'],'provider_updated_at')
+        self.assertEqual(quote['quote_at'],self.now.timestamp()-1)
+
     def test_rules_missing_minutes_and_corporate_action(self):
         features = {'600000.SH': dict(name='浦发银行', date='20260903', observations=60, adjusted=True, last_close=10, mean_volume5=100000000,
                         sum4=40, sum9=87, sum19=175, ma5=9.9, platform_range=1.1, platform_high=11, float_shares=2000000000)}

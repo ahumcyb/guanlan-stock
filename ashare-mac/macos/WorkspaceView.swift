@@ -71,11 +71,13 @@ struct WorkspaceView:View {
             if let report=store.report {
                 HStack(spacing:15) {
                     Metric(label:"有效股票池",value:report.eligibleCount.formatted(),note:"\(report.universeCount.formatted()) 只当日行情")
-                    Metric(label:report.isMomentum60 ? "符合条件":"转强确认",value:String(report.confirmedCount),note:report.isMomentum60 ? "精选最多 5 只":"精选最多 10 只")
+                    Metric(label:report.conditionLabel ? "符合条件":"转强确认",value:String(report.confirmedCount),note:report.isMomentum60 ? "精选最多 5 只":"精选最多 10 只")
                     Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),note:report.isMomentum60 ? "MA20 上方占比 · 不参与筛选":"MA20 上方占比 · \(report.regime)",color:Palette.teal)
                 }
                 if report.isMomentum60 {
                     Text(Momentum60Guide.evidence).font(.system(size:10)).foregroundStyle(Palette.amber).lineSpacing(3)
+                } else if report.isLeft {
+                    Text(LeftReboundGuide.summary+" 市场宽度门槛为 20%。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(3)
                 }
                 if report.staleSessions>0 || report.missingAdjustmentToday>0 || report.missingLimitsToday>0 {
                     HStack(alignment:.top,spacing:7) {
@@ -105,7 +107,7 @@ struct WorkspaceView:View {
             if !favoritesOnly {
                 HStack(spacing:4) {
                     ForEach(["精选","转强","等待","全部"],id:\.self) { item in
-                        Button(item=="转强" && store.report?.isMomentum60==true ? "符合":item) { filter=item; query="" }
+                        Button(item=="转强" && store.report?.conditionLabel==true ? "符合":item) { filter=item; query="" }
                             .buttonStyle(.plain).font(.system(size:11,weight:filter==item ? .semibold:.regular))
                             .padding(.horizontal,14).padding(.vertical,7)
                             .foregroundStyle(filter==item ? Palette.teal:Palette.muted)

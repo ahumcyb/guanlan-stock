@@ -49,7 +49,7 @@ import UniformTypeIdentifiers
         dataRoot = UserDefaults.standard.string(forKey: "dataRoot")
             ?? URL(fileURLWithPath: runtime.projectRoot).deletingLastPathComponent().appendingPathComponent("data").path
         favorites = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
-        strategy = UserDefaults.standard.string(forKey:"strategy") ?? "leaders"
+        strategy = AfterCloseStrategies.activeChoice(UserDefaults.standard.string(forKey:"strategy"))
         remoteEnabled = UserDefaults.standard.object(forKey:"useServerData") as? Bool
             ?? FileManager.default.fileExists(atPath:runtime.projectRoot+"/settings/server.json")
         if !loadReport() { run(update:remoteEnabled) }

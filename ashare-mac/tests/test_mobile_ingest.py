@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from engine.snapshot_protocol import FILE_NAMES,revision_for
-from mobile_server.artifacts import atomic_json
+from mobile_server.artifacts import atomic_json,current_manifest
 from mobile_server.ingest import activate,extract
 from mobile_server.queue import JobQueue
 
@@ -27,16 +27,16 @@ class IngestTests(unittest.TestCase):
 
     def tearDown(self):self.tmp.cleanup()
 
-    def bundle(self):
+    def bundle(self,generation='20260905T120000-abcdef'):
         entries={f'market/raw/{name}':b'bounded fixture '+name.encode() for name in FILE_NAMES}
         manifest={'schema_version':1,'as_of':'20260904','files':[
             {'name':name,'bytes':len(entries['market/raw/'+name]),'rows':1,
              'sha256':hashlib.sha256(entries['market/raw/'+name]).hexdigest()} for name in FILE_NAMES]}
         manifest['revision']=revision_for(manifest)
-        metadata={'schema_version':1,'input_revision':manifest['revision'],'data_revision':manifest['revision'],'generation':'20260905T120000-abcdef'}
+        metadata={'schema_version':1,'input_revision':manifest['revision'],'data_revision':manifest['revision'],'generation':generation}
         entries['market/manifest.json']=json.dumps(manifest).encode()
         entries['bundle.json']=json.dumps(metadata).encode()
-        for strategy in ['leaders','pullback','golden_pit','momentum_60']:
+        for strategy in ['leaders','pullback','golden_pit','left_rebound']:
             report=json.dumps({'schema_version':1,'strategy_id':strategy,'as_of':'20260904',
                 'data_revision':manifest['revision'],'stocks':[{'ts_code':'000001.SZ'}]}).encode()
             entries[f'research/{strategy}/report.json']=report
@@ -62,7 +62,7 @@ class IngestTests(unittest.TestCase):
     def test_missing_fourth_report_cannot_replace_current(self):
         self.bundle()
         with zipfile.ZipFile(self.archive) as original:
-            members={n:original.read(n) for n in original.namelist() if not n.startswith('research/momentum_60/')}
+            members={n:original.read(n) for n in original.namelist() if not n.startswith('research/left_rebound/')}
         with zipfile.ZipFile(self.archive,'w') as output:
             for name,data in members.items():output.writestr(name,data)
         data=self.archive.read_bytes()
@@ -146,3 +146,37 @@ class IngestTests(unittest.TestCase):
         self.assertEqual(self.queue.public()['status'],'completed')
         self.assertEqual((self.root/'current').resolve().name,metadata['generation'])
         self.assertEqual(list((market/'staging').iterdir()),[])
+
+    def test_activation_retention_keeps_latest_historical_momentum_after_four_left_releases(self):
+        generation='20260904T161100-abcdef';release=self.root/'releases'/generation
+        (release/'momentum_60').mkdir(parents=True);(release/'charts').mkdir()
+        report=b'{"strategy_id":"momentum_60","historical":true}'
+        (release/'momentum_60/report.json').write_bytes(report)
+        atomic_json(release/'momentum_60/manifest.json',{'schema_version':1,'generation':generation,
+            'strategy':'momentum_60','as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa',
+            'report_bytes':len(report),'report_sha256':hashlib.sha256(report).hexdigest(),'stock_count':1})
+        chart=b'[{"date":"20260904","close":10}]';(release/'charts/000001.SZ.json').write_bytes(chart)
+        os.utime(release,(0,0))
+
+        def publish_market(root,revision):
+            from deployment.publish import verify
+            verify(root/'staging'/revision,revision)
+
+        self.bundle('20260905T161100-aaaaa1')
+        with zipfile.ZipFile(self.archive) as archive:metadata=json.loads(archive.read('bundle.json'))
+        (self.root/'market/current').mkdir();atomic_json(self.root/'market/current/manifest.json',{'revision':metadata['input_revision']})
+        clock=1000
+        with patch('mobile_server.ingest.publish_market',side_effect=publish_market):
+            for index in range(4):
+                if index:
+                    clock+=61;self.queue.clock=lambda value=clock:value
+                    self.queue.submit('recompute',str(uuid.uuid4()));self.job=self.queue.claim('mac')
+                    self.bundle(f'2026090{5+index}T161100-aaaaa{index+1}')
+                data=self.archive.read_bytes()
+                self.queue.uploaded(self.job['id'],self.job['lease'],hashlib.sha256(data).hexdigest(),len(data))
+                activate(self.archive,self.root,self.root/'market',self.queue,self.job)
+
+        manifest=current_manifest(self.root,'momentum_60')
+        self.assertEqual(manifest['generation'],generation)
+        self.assertEqual((release/'momentum_60/report.json').read_bytes(),report)
+        self.assertEqual((release/'charts/000001.SZ.json').read_bytes(),chart)

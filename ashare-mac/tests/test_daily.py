@@ -112,3 +112,12 @@ class DailyStoreTests(unittest.TestCase):
         self.assertFalse(self.store.public()['scheduler_online'])
         self.store.pulse();self.assertTrue(self.store.public()['scheduler_online'])
         self.now+=46;self.assertFalse(self.store.public()['scheduler_online'])
+
+    def test_refresh_facts_rebuilds_settlement_without_duplicate_completion_alert(self):
+        self.store.tick(self.root/'market/current',collect=lambda *a:self.evidence,analyze=self.ai)
+        self.now+=61;self.store.request(refresh_facts=True)
+        changed=dict(self.evidence,performance={'signal_date':'20260903','evaluation_date':DATE,'status':'unavailable'})
+        self.store.tick(self.root/'market/current',collect=lambda *a:changed,analyze=self.ai)
+        self.assertEqual(self.store.public()['latest']['evidence']['performance'],changed['performance'])
+        self.assertEqual(len([e for e in self.realtime.state()['events'] if e['kind']=='daily_review']),1)
+        self.assertEqual(self.calls,2)

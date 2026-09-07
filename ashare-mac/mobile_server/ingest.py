@@ -11,7 +11,7 @@ from pathlib import Path,PurePosixPath
 from deployment.publish import verify,publish as publish_market
 from engine.snapshot_protocol import FILE_NAMES,REVISION,sha256_file
 from engine.close_proof import valid_date,verify_package_close
-from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,checked_file,atomic_json
+from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,checked_file,atomic_json,preserved_legacy_generations
 from .queue import PERSISTENT_FIELDS,CONTEXT_FIELDS
 
 
@@ -131,7 +131,7 @@ def activate(bundle,root,market_root,queue,job):
                  'data_revision':metadata['data_revision'],'close_attestation':metadata['close_attestation'],
                  'job_id':captured['id'],'published_at':time.time()})
         versions=sorted([p for p in (root/'releases').iterdir() if GENERATION.fullmatch(p.name) and p.is_dir() and not p.is_symlink()],key=lambda p:p.stat().st_mtime,reverse=True)
-        protected={metadata['generation'],*[p.name for p in versions if p!=release][:2]}
+        protected={metadata['generation'],*[p.name for p in versions if p!=release][:2]}|preserved_legacy_generations(root/'releases')
         for path in versions:
             if path.name not in protected and time.time()-path.stat().st_mtime>86400:shutil.rmtree(path)
         return metadata

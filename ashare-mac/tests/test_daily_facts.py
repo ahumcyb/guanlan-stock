@@ -37,6 +37,30 @@ def published_fixture(folder):
 
 
 class DailyFactsTests(unittest.TestCase):
+    def test_collector_settles_saved_previous_picks_and_preserves_retired_strategy(self):
+        import pandas as pd
+        from mobile_server.artifacts import HISTORICAL_STRATEGIES
+        from mobile_server.selection_snapshots import save_snapshot
+        with tempfile.TemporaryDirectory() as folder:
+            root,market=published_fixture(folder);raw=market/'current/raw'
+            today=pd.read_parquet(raw/'daily.parquet');code=today.iloc[2].ts_code
+            prior=today.iloc[[2]].copy();prior['trade_date']='20260903';prior['close']=8.
+            pd.concat([prior,today],ignore_index=True).to_parquet(raw/'daily.parquet',index=False)
+            factors=pd.read_parquet(raw/'adj_factor.parquet');old=factors.iloc[[2]].copy();old['trade_date']='20260903'
+            pd.concat([old,factors],ignore_index=True).to_parquet(raw/'adj_factor.parquet',index=False)
+            pd.DataFrame({'exchange':['SSE','SSE'],'cal_date':['20260903',DATE],'is_open':[1,1]}).to_parquet(raw/'trade_cal.parquet',index=False)
+            groups=[dict(id=s,name=s,picks=[dict(ts_code=code,name='昨日精选',close=8.,rank=1)]) for s in HISTORICAL_STRATEGIES]
+            save_snapshot(root,'20260903','20260903T161100-abcdef','20260903-'+'b'*16,groups)
+            facts=collect_evidence(root,market/'current',DATE,NOW.timestamp());result=facts['performance']
+            self.assertEqual(result['status'],'available')
+            self.assertEqual(result['signal_date'],'20260903')
+            self.assertEqual(result['new_strategy_ids'],['left_rebound'])
+            self.assertEqual(result['strategies'][-1]['id'],'momentum_60')
+            for group in result['strategies']:
+                self.assertEqual(group['rows'][0]['ts_code'],code)
+                self.assertEqual(group['mean_return_pct'],25.)
+            self.assertNotEqual(facts['strategies'][0]['picks'][0]['ts_code'],code)
+
     def test_amount_units_counts_and_four_strategy_binding(self):
         with tempfile.TemporaryDirectory() as folder:
             root,market=published_fixture(folder)
@@ -51,7 +75,7 @@ class DailyFactsTests(unittest.TestCase):
     def test_mismatched_report_or_day_proof_cannot_feed_ai(self):
         with tempfile.TemporaryDirectory() as folder:
             root,market=published_fixture(folder)
-            file=root/'current/momentum_60/report.json';file.write_text('{}')
+            file=root/'current/left_rebound/report.json';file.write_text('{}')
             with self.assertRaises(ValueError):collect_evidence(root,market/'current',DATE,NOW.timestamp())
 
     def test_receipt_survives_current_pointer_advancing_but_remains_bound_to_its_data(self):
@@ -65,7 +89,7 @@ class DailyFactsTests(unittest.TestCase):
 
     def test_self_consistent_report_hash_does_not_hide_a_wrong_candidate_price(self):
         with tempfile.TemporaryDirectory() as folder:
-            root,market=published_fixture(folder);directory=root/'current/momentum_60'
+            root,market=published_fixture(folder);directory=root/'current/left_rebound'
             report=json.loads((directory/'report.json').read_text());report['stocks'][1]['close']=999.
             raw=json.dumps(report).encode();(directory/'report.json').write_bytes(raw)
             manifest=json.loads((directory/'manifest.json').read_text())

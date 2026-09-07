@@ -1,6 +1,7 @@
 """Independent intraday service, so expensive history jobs cannot block alert scheduling."""
 import argparse
 import json
+import hashlib
 import os
 import signal
 import subprocess
@@ -15,13 +16,75 @@ from .mac_worker import WorkerClient, LostLease
 from .realtime import RealtimeStore
 
 
-def execute(market, cache, job, config=None):
+STAGE_LABELS={'sync':'服务器行情同步','credentials':'行情凭据读取','history':'历史基准与流通股本准备',
+              'quotes':'实时行情获取','index':'沪深300行情获取','minutes':'分钟行情获取',
+              'validation':'实时结果校验','runtime':'盘中计算'}
+
+
+def blocked_report(job,stage,code):
+    stage=stage if stage in STAGE_LABELS else 'runtime'
+    return dict(schema_version=1,date=job['date'],previous_date=job['previous_date'],generated_at=time.time(),
+        kind=job['kind'],strategies={'overnight':[],'golden':[]},reviews=[],warnings=[],status='blocked',
+        failure_stage=stage,failure_code=code,
+        message=STAGE_LABELS[stage]+'未完成，本轮未生成候选；请查看运行记录后重试')
+
+
+def execute(market, cache, job, config=None, progress=None):
+    progress=progress or (lambda stage:None)
     if config:
-        # Use the existing immutable download protocol, via its supported CLI.
-        subprocess.run([sys.executable, '-m', 'engine.remote', '--config', config['ssh_config'],
-                        '--cache', str(Path(config['workspace']) / 'market')], check=True, timeout=120)
+        progress('sync')
+        from engine.remote import verify_files
+        from engine.snapshot_protocol import validate_manifest
+        ready=False
+        try:
+            header=validate_manifest(json.loads((Path(market)/'manifest.json').read_text()))
+            if header['as_of']>=job['previous_date']:
+                verify_files(Path(market),header);ready=True
+        except (OSError,ValueError,KeyError):pass
+        if not ready:
+            # The earlier daily job pre-caches its built tables; sync only activates
+            # them after the server confirms the immutable revision.
+            process=subprocess.Popen([sys.executable,'-m','engine.remote','--config',config['ssh_config'],
+                '--cache',str(Path(config['workspace'])/'market')],start_new_session=True)
+            try:
+                if process.wait(timeout=180):raise ValueError('镜像同步未完成')
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid,signal.SIGTERM)
+                    try:process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
     from engine.intraday_runner import run
-    return run(market, cache, job['kind'], job.get('previous_candidates', []))
+    return run(market, cache, job['kind'], job.get('previous_candidates', []),progress=progress)
+
+
+def execute_report(market,cache,job,config=None):
+    start=time.monotonic();stage='runtime'
+    folder=Path(cache)/'diagnostics'
+    try:folder.mkdir(parents=True,exist_ok=True,mode=0o700)
+    except OSError:pass
+    path=folder/(hashlib.sha256(str(job['id']).encode()).hexdigest()[:24]+'.json')
+    record=dict(schema_version=1,slot=str(job['id'])[:80],kind=job['kind'],started_at=time.time())
+    def save(status,**values):
+        record.update(stage=stage,status=status,elapsed_seconds=round(time.monotonic()-start,3),**values)
+        try:atomic_json(path,record)
+        except OSError:pass
+    def progress(value):
+        nonlocal stage
+        stage=value if value in STAGE_LABELS else 'runtime';save('running')
+    try:
+        report=execute(market,cache,job,config,progress=progress)
+        save(report['status'],quote_diagnostics=report.get('quote_diagnostics',{}),
+             failure_code=report.get('failure_code'))
+        return report
+    except Exception as error:
+        # The exception message can contain provider content or credentials. Do not persist it.
+        save('blocked',exception_type=type(error).__name__[:80],failure_code='execution_error')
+        return blocked_report(job,stage,'execution_error')
+    finally:
+        try:
+            for old in sorted(folder.glob('*.json'),key=lambda p:p.stat().st_mtime)[:-30]:
+                if old!=path:old.unlink()
+        except OSError:pass
 
 
 def run_job(claim, renew, publish, failure, market, cache, config_path=None):
@@ -51,7 +114,7 @@ def run_job(claim, renew, publish, failure, market, cache, config_path=None):
                 if lost.wait(.5):
                     raise LostLease()
                 if time.monotonic() > deadline:
-                    raise ValueError('盘中计算超时')
+                    raise TimeoutError('盘中计算超时')
             if process.returncode or not result.is_file() or result.stat().st_size > 128 * 1024:
                 raise ValueError('盘中计算未完成')
             if lost.is_set():
@@ -61,12 +124,15 @@ def run_job(claim, renew, publish, failure, market, cache, config_path=None):
             print('盘中结果已校验并同步', flush=True)
     except LostLease:
         print('盘中执行连接失效，丢弃迟到结果', flush=True)
-    except Exception:
+    except Exception as error:
+        code='execution_timeout' if isinstance(error,TimeoutError) else 'worker_error'
         try:
-            failure(claim['lease'])
+            if not publish(claim['lease'],blocked_report(claim,'runtime',code)):
+                failure(claim['lease'])
         except Exception:
-            pass
-        print('本轮盘中检查未完成，详情保留在 App 运行记录', flush=True)
+            try:failure(claim['lease'])
+            except Exception:pass
+        print(json.dumps(dict(event='realtime_failed',slot=claim['id'],failure_code=code),ensure_ascii=False),flush=True)
     finally:
         stop.set();thread.join(timeout=1)
         if process is not None and process.poll() is None:
@@ -103,7 +169,7 @@ def main(args):
     config = json.loads(args.config.read_text()) if args.config else None
     if args.execute:
         job = json.loads(args.execute.read_text())
-        atomic_json(args.result, execute(args.market_root, args.cache, job, config));return
+        atomic_json(args.result, execute_report(args.market_root, args.cache, job, config));return
     if args.calendar:
         from engine.intraday_runner import read_calendar, IntradayProvider
         args.cache.mkdir(parents=True, exist_ok=True)

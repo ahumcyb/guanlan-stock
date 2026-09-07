@@ -28,9 +28,11 @@ struct DailySummaryScreen:View {
                             Text(report.analysis.headline).font(.title2.weight(.semibold))
                         }.padding(.horizontal,4)
                         marketCard(report.evidence)
-                        analysisCard(report.analysis)
+                        performanceCard(report.evidence.performance)
+                        analysisCard(report.analysis,showStrategy:report.evidence.performance != nil)
                         sectorsCard("相对较强行业",report.evidence.sectorsStrong)
                         sectorsCard("相对较弱行业",report.evidence.sectorsWeak)
+                        Text("本日新选 · 留待下一交易日评价").font(.headline).padding(.horizontal,4)
                         ForEach(report.evidence.strategies) { strategy in strategyCard(strategy) }
                         ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
                         Text("生成于 \(dailyTime(report.generatedAt))。数据来自已核验的 ProMax 收盘行情；行业为成分股等权均值，非行业指数。AI 只作量价解读，未核验新闻或财务，不改变候选。")
@@ -38,8 +40,8 @@ struct DailySummaryScreen:View {
                     } else {
                         EmptyMessage(title:"等待收盘后的完整总结",text:"核对当日行情与四策略结果后，再生成复盘。可在右上角设置中更换 DeepSeek API Key。",icon:"sun.horizon")
                     }
-                    Button { Task { await store.dailyAction("generate") } } label: {
-                        Label("补生成最近收盘日",systemImage:"arrow.clockwise").frame(maxWidth:.infinity,minHeight:32)
+                    Button { Task { await store.dailyAction("generate",values:["refresh_facts":true]) } } label: {
+                        Label("重新核验并生成",systemImage:"arrow.clockwise").frame(maxWidth:.infinity,minHeight:32)
                     }.buttonStyle(.bordered).disabled(store.dailyBusy || !store.connected)
                 }.padding(16)
             }.background(MobileTheme.background).navigationTitle("收盘总结")
@@ -62,12 +64,34 @@ struct DailySummaryScreen:View {
             Text(evidence.universeLabel).font(.caption2).foregroundStyle(.secondary)
         } }
     }
-    private func analysisCard(_ analysis:DailyAnalysis)->some View {
+    private func performanceCard(_ performance:DailyPerformance?)->some View {
+        ResearchCard { VStack(alignment:.leading,spacing:16) {
+            Text("昨日精选 · 今日结算").font(.headline)
+            if let performance {
+                Text("\(dateText(performance.signalDate ?? "—")) 精选 → \(dateText(performance.evaluationDate)) 收盘").font(.caption).foregroundStyle(.secondary)
+                Text(performance.message ?? "等权观察口径，未计交易费用及成交约束。").font(.caption).foregroundStyle(.secondary)
+                ForEach(performance.strategies) { group in
+                    VStack(alignment:.leading,spacing:10) {
+                        HStack { Text(group.name).font(.subheadline.weight(.semibold));Spacer();Text(group.meanReturnPct.map(dailyChange) ?? "—").monospacedDigit().foregroundStyle(MobileTheme.change(group.meanReturnPct ?? 0)) }
+                        if !AfterCloseStrategies.ids.contains(group.id) { Text("此前策略 · 保留历史结算").font(.caption2).foregroundStyle(MobileTheme.amber) }
+                        Text("昨日 \(group.selectedCount) 只 · 结算 \(group.settledCount) 只\n上涨 \(group.upCount) / 下跌 \(group.downCount) / 平盘 \(group.flatCount)").font(.caption).foregroundStyle(.secondary)
+                        if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(MobileTheme.amber) }
+                        if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(.secondary) }
+                        DisclosureGroup("逐股结算") {
+                            ForEach(group.rows) { row in VStack(alignment:.leading,spacing:4) { HStack { Text(row.name);Spacer();Text(row.returnPct.map(dailyChange) ?? "未结算") };Text(row.reason ?? String(row.tsCode.prefix(6))).font(.caption2).foregroundStyle(.secondary) }.font(.caption).padding(.top,6) }
+                        }.font(.caption)
+                    }.padding(.vertical,4)
+                }
+                if !(performance.newStrategyIds ?? []).isEmpty { Text("新策略尚无昨日精选，下个交易日起才能结算。").font(.caption).foregroundStyle(.secondary) }
+            } else { Text("旧版总结尚未包含昨日精选结算。可重新核验并生成最近收盘日。").font(.caption).foregroundStyle(.secondary) }
+        } }
+    }
+    private func analysisCard(_ analysis:DailyAnalysis,showStrategy:Bool)->some View {
         ResearchCard { VStack(alignment:.leading,spacing:16) {
             Label(analysis.status=="ready" ? "DeepSeek 量价解读":"量价摘要",systemImage:"text.alignleft").font(.headline)
             if analysis.status=="pending" { ProgressView("正在生成分析…") }
             paragraph("市场",analysis.marketView);paragraph("行业",analysis.sectorView)
-            paragraph("策略",analysis.strategyView);paragraph("下一交易日",analysis.watchNext)
+            if showStrategy { paragraph("昨日精选结算",analysis.strategyView) };paragraph("下一交易日",analysis.watchNext)
             ForEach(analysis.risks,id:\.self) { Text("· "+$0).font(.caption).foregroundStyle(MobileTheme.amber).lineSpacing(4) }
         }.frame(maxWidth:.infinity,alignment:.leading) }
     }
@@ -85,7 +109,7 @@ struct DailySummaryScreen:View {
         ResearchCard { VStack(alignment:.leading,spacing:12) {
             HStack { Text(strategy.name).font(.headline);Spacer();StatePill(text:"\(strategy.shortlistCount) 只精选") }
             Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.caption).foregroundStyle(.secondary)
-            if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 40% 门槛，暂停新候选。").font(.caption).foregroundStyle(MobileTheme.amber) }
+            if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.caption).foregroundStyle(MobileTheme.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.subheadline).foregroundStyle(.secondary) }
             ForEach(strategy.picks) { row in HStack { VStack(alignment:.leading,spacing:4) { Text(row.name);Text(String(row.tsCode.prefix(6))).font(.caption).foregroundStyle(.secondary) };Spacer();Text(decimal(row.close)).monospacedDigit();Text(dailyChange(row.change)).monospacedDigit().foregroundStyle(MobileTheme.change(row.change)) }.font(.subheadline) }
         } }

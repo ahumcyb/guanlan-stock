@@ -28,6 +28,9 @@ struct MobileResearch:View {
                                 Text("策略和验证边界").font(.headline)
                                 if report.isMomentum60 {
                                     Text(Momentum60Guide.summary).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
+                                } else if report.isLeft {
+                                    Text(LeftReboundGuide.summary).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
+                                    Text("本页是固定规则回算的事件检验；每日收盘总结另用此前已保存精选结算次日表现。").font(.caption).foregroundStyle(.secondary)
                                 } else {
                                     Text("流动性趋势：成交额前20%、20日强度前50%，收盘 > MA20 > MA60，短期延续且不过热。\n\n缩量回踩：20日强度前35%，距离近10日高点回撤1%–10%，近3日成交额收缩后收盘转强。\n\n基础池要求沪深非ST、充足日线、日均成交额≥1亿元、价格≥3元、ATR≤6%；市场宽度至少40%，每行业最多2只，共10只候选。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                                 }

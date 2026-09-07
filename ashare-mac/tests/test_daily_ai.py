@@ -54,17 +54,21 @@ class DailyAITests(unittest.TestCase):
             self.assertEqual(payload['thinking'],{'type':'disabled'})
             self.assertLessEqual(payload['max_tokens'],2000)
 
-    def test_candidate_direction_counts_are_computed_before_the_model_call(self):
+    def test_only_previous_selection_performance_can_supply_strategy_returns(self):
         evidence={'market':{'breadth':.4574,'advancers':2249,'decliners':2773},'strategies':[{'name':'60 日风险调整动量','picks':[
             {'change':-1.47},{'change':.086},{'change':.373},{'change':-1.35},{'change':-1.17}]}]}
+        evidence['performance']={'signal_date':'20260904','evaluation_date':'20260907','status':'available',
+            'strategies':[{'id':'momentum_60','up_count':2,'down_count':3,'flat_count':0,'mean_return_pct':-1.2}]}
         original=json.dumps(evidence,sort_keys=True)
         content=dict(headline='收盘分化',market_view='涨跌分化',sector_view='行业分化',strategy_view='候选表现分化',watch_next='观察确认',risks=[])
         with patch('mobile_server.notifications.build_opener') as factory:
             factory.return_value.open.return_value=Response({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(content)}}]})
             self.assertEqual(deepseek_daily_review('test-key-not-production','deepseek-v4-pro',evidence)['status'],'ready')
             payload=json.loads(factory.return_value.open.call_args.args[0].data)
-            data=json.loads(payload['messages'][1]['content']);strategy=data['strategies'][0]
-            self.assertEqual((strategy['pick_up_count'],strategy['pick_down_count'],strategy['pick_flat_count']),(2,3,0))
+            data=json.loads(payload['messages'][1]['content'])
+            self.assertNotIn('strategies',data)
+            self.assertNotIn('picks',data['current_shortlists'][0])
+            self.assertEqual(data['performance'],evidence['performance'])
             self.assertNotIn('breadth',data['market'])
             self.assertEqual(data['market']['strategy_pool_above_ma20_pct'],45.74)
             self.assertEqual(data['market']['advancer_decliner_ratio'],.811)

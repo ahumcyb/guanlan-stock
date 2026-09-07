@@ -12,7 +12,7 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
+from .artifacts import STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
 from .queue import JobQueue,canonical_uuid
 from .realtime import RealtimeStore
 from .daily import DailyStore
@@ -77,7 +77,7 @@ class Service:
                     value=json.loads(body)
                     if not isinstance(value,dict):raise ValueError()
                     if parts[2]=='settings':return 200,self.daily.configure(value)
-                    if parts[2]=='generate' and set(value)<={'retry_ai'}:
+                    if parts[2]=='generate' and set(value)<={'retry_ai','refresh_facts'}:
                         return 202,self.daily.request(**value)
                 except BlockingIOError:raise Failure(429,'COOLDOWN','请稍后再试，每分钟最多一次')
                 except (ValueError,TypeError,KeyError):raise Failure(400,'INVALID_BODY','请检查收盘总结设置或等待交易日历就绪')
@@ -143,7 +143,7 @@ class Service:
             if value['action']=='refresh' and not info.get('can_refresh'):raise Failure(409,'UPDATE_UNAVAILABLE','服务器尚未配置行情更新凭据')
             try:return 202,self.queue.submit(value['action'],value['request_id'])
             except BlockingIOError:raise Failure(429,'COOLDOWN','刚执行过任务，请稍后再试')
-        if method=='GET' and len(parts)>=4 and parts[:2]==['v1','reports'] and parts[2] in STRATEGIES:
+        if method=='GET' and len(parts)>=4 and parts[:2]==['v1','reports'] and parts[2] in SUPPORTED_STRATEGIES:
             strategy=parts[2]
             if len(parts)==4 and parts[3]=='current':return 200,current_manifest(self.root,strategy)
             if not GENERATION.fullmatch(parts[3]):raise Failure(400,'INVALID_VERSION','数据版本无效')

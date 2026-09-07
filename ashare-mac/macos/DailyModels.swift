@@ -43,7 +43,7 @@ struct DailyReport:Codable {
               (1...10000).contains(market.stockCount),market.advancers>=0,market.decliners>=0,market.unchanged>=0,
               market.advancers+market.decliners+market.unchanged==market.stockCount,
               market.turnoverYi.isFinite,market.turnoverYi>=0,market.medianChange.isFinite,(0...1).contains(market.breadth),
-              evidence.strategies.count==4,Set(evidence.strategies.map(\.id))==Set(AfterCloseStrategies.ids),
+              AfterCloseStrategies.validGroup(evidence.strategies.map(\.id)),
               evidence.sectorsStrong.count<=5,evidence.sectorsWeak.count<=5,
               ["ready","pending","unavailable"].contains(analysis.status),analysis.risks.count<=5,
               [analysis.headline,analysis.marketView,analysis.sectorView,analysis.strategyView,analysis.watchNext].allSatisfy({$0.count<=1000}) else {
@@ -55,12 +55,14 @@ struct DailyReport:Codable {
                 throw CocoaError(.fileReadCorruptFile)
             }
         }
+        try evidence.performance?.validate(date:date)
     }
 }
 struct DailyEvidence:Codable {
     let date:String;let generation:String;let dataRevision:String;let fetchedAt:String;let universeLabel:String
     let market:DailyMarketFacts;let sectorsStrong:[DailySector];let sectorsWeak:[DailySector]
     let strategies:[DailyStrategyFacts];let warnings:[String]
+    let performance:DailyPerformance?
 }
 struct DailyMarketFacts:Codable {
     let stockCount:Int;let advancers:Int;let decliners:Int;let unchanged:Int;let turnoverYi:Double
@@ -73,6 +75,37 @@ struct DailySector:Codable,Identifiable {
 struct DailyStrategyFacts:Codable,Identifiable {
     let id:String;let name:String;let shortlistCount:Int;let confirmedCount:Int;let watchingCount:Int;let picks:[DailyPick]
     let marketFilterApplies:Bool?;let marketFilterPassed:Bool?
+    let marketFilterThreshold:Double?
+}
+struct DailyPerformance:Codable {
+    let signalDate:String?;let evaluationDate:String;let basis:String;let status:String
+    let strategies:[DailyStrategyPerformance];let message:String?
+    let sourceGeneration:String?;let sourceDataRevision:String?;let snapshotSha256:String?;let timingBasis:String?
+    let newStrategyIds:[String]?
+    func validate(date:String) throws {
+        guard evaluationDate==date,basis=="adjusted_close_to_close",["available","unavailable"].contains(status),
+              signalDate==nil || (validDailyDate(signalDate!) && signalDate!<date),
+              status=="available" ? AfterCloseStrategies.validGroup(strategies.map(\.id)):strategies.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+        for group in strategies {
+            guard group.selectedCount==group.rows.count,(0...10).contains(group.selectedCount),
+                  group.settledCount>=0,group.settledCount<=group.selectedCount,
+                  group.upCount>=0,group.downCount>=0,group.flatCount>=0,
+                  group.upCount+group.downCount+group.flatCount==group.settledCount,
+                  ["complete","partial","no_picks"].contains(group.status),
+                  group.status=="complete" ? (group.selectedCount>0 && group.settledCount==group.selectedCount && group.meanReturnPct?.isFinite==true):group.meanReturnPct==nil,
+                  group.rows.filter({$0.status=="settled"}).count==group.settledCount,
+                  group.rows.allSatisfy({["settled","unsettled"].contains($0.status) && ($0.status=="settled" ? $0.returnPct?.isFinite==true:$0.returnPct==nil)}) else { throw CocoaError(.fileReadCorruptFile) }
+        }
+    }
+}
+struct DailyStrategyPerformance:Codable,Identifiable {
+    let id:String;let name:String;let status:String;let selectedCount:Int;let settledCount:Int
+    let upCount:Int;let downCount:Int;let flatCount:Int;let meanReturnPct:Double?;let rows:[DailyPerformanceRow]
+}
+struct DailyPerformanceRow:Codable,Identifiable {
+    let tsCode:String;let name:String;let status:String;let returnPct:Double?;let reason:String?
+    let previousClose:Double?;let currentClose:Double?;let previousAdjFactor:Double?;let currentAdjFactor:Double?
+    var id:String { tsCode }
 }
 struct DailyPick:Codable,Identifiable {
     let tsCode:String;let name:String;let industry:String;let close:Double;let change:Double;let score:Double;let rank:Int

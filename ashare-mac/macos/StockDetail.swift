@@ -44,6 +44,14 @@ struct StockDetail: View {
                         condition("当日克制",detail:"当日涨幅 ≤5%",ok:stock.turnOk)
                         Text("原始动量比值 \(decimal(stock.momentumRatio)) · 分数为候选内排名，不是胜率")
                             .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
+                    } else if store.report?.isLeft==true {
+                        condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))",ok:stock.trendOk)
+                        condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))",ok:stock.strengthOk)
+                        condition("低位区域",detail:"60 日回撤 \(percent(stock.leftDrawdown60))",ok:stock.pullbackOk)
+                        condition("量能收敛",detail:"当日 / 前五日均量 \(decimal(stock.leftVolume5))",ok:stock.volumeOk)
+                        condition("抛压收敛",detail:"未急跌、未追涨且未封跌停",ok:stock.turnOk)
+                        Text("距20日低价 \(percent(stock.leftDistanceLow20)) · 左侧观察，尚未要求收复均线")
+                            .font(.system(size:10)).foregroundStyle(Palette.muted)
                     } else if store.report?.isGoldenPit==true {
                         condition("长期趋势",detail:"MA60 五日变化 \(percent(stock.ma60Slope))",ok:stock.trendOk)
                         condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",ok:stock.strengthOk)
@@ -72,9 +80,9 @@ struct StockDetail: View {
                 Divider()
                 Text("下一交易日的观察计划").font(.system(size:13,weight:.semibold))
                 VStack(spacing:11) {
-                    priceRow(store.report?.isMomentum60==true ? "趋势参考":"回踩参考",value:stock.support,note:store.report?.isMomentum60==true ? "MA60 附近":"MA20 附近")
+                    priceRow(store.report?.isLeft==true ? "低位参考":(store.report?.isMomentum60==true ? "趋势参考":"回踩参考"),value:stock.support,note:store.report?.isLeft==true ? "近20日低价":(store.report?.isMomentum60==true ? "MA60 附近":"MA20 附近"))
                     priceRow(store.report?.isGoldenPit==true ? "坑口压力":"突破观察",value:stock.breakout,note:store.report?.isGoldenPit==true ? "回撤前高点":"信号日最高价")
-                    priceRow("失效参考",value:stock.invalidation,note:store.report?.isGoldenPit==true ? "坑底下方 1% / 1.5 ATR 较高者":"近五日低点 / 1.5 ATR")
+                    priceRow("失效参考",value:stock.invalidation,note:store.report?.isLeft==true ? "20日低价下方2% / 2 ATR":(store.report?.isGoldenPit==true ? "坑底下方 1% / 1.5 ATR 较高者":"近五日低点 / 1.5 ATR"))
                 }
                 Text("仅作盘后观察。高开超过 3% 放弃追入，默认观察 3 个交易日。失效价不保证成交；历史检验未模拟盘中止损。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(4)
                 HStack {

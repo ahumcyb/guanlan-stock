@@ -4,7 +4,9 @@ import tempfile
 import time
 import unittest
 import uuid
+import os
 from pathlib import Path
+from unittest.mock import patch
 from mobile_server.api import Service,Failure
 from mobile_server.artifacts import atomic_json,publish,current_manifest
 
@@ -73,7 +75,7 @@ class MobileAPITests(unittest.TestCase):
 
     def outputs(self):
         outputs=self.root/'outputs'
-        for strategy in ['leaders','pullback','golden_pit','momentum_60']:
+        for strategy in ['leaders','pullback','golden_pit','left_rebound']:
             folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True)
             report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[{'ts_code':'000001.SZ'}],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
             atomic_json(folder/'report.json',report);atomic_json(folder/'charts/000001.SZ.json',[{'date':'20260904'}])
@@ -112,16 +114,39 @@ class MobileAPITests(unittest.TestCase):
 
     def test_momentum_is_served_and_bad_fourth_chart_preserves_current(self):
         outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        manifest=self.call('GET','/v1/reports/momentum_60/current')[1]
+        manifest=self.call('GET','/v1/reports/left_rebound/current')[1]
         self.assertEqual(manifest['generation'],first['leaders']['generation'])
-        (outputs/'momentum_60/20260905T120000-abcdef/charts/000001.SZ.json').write_text('[]')
+        (outputs/'left_rebound/20260905T120000-abcdef/charts/000001.SZ.json').write_text('[]')
         with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        self.assertEqual(current_manifest(self.root,'momentum_60'),first['momentum_60'])
+        self.assertEqual(current_manifest(self.root,'left_rebound'),first['left_rebound'])
 
     def test_old_release_remains_readable_before_fourth_strategy_is_published(self):
         publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')
         import shutil
-        shutil.rmtree(self.root/'current/momentum_60')
+        shutil.rmtree(self.root/'current/left_rebound')
         status=self.call('GET','/v1/status')[1]
         self.assertEqual(set(status['reports']),{'leaders','pullback','golden_pit'})
         self.assertEqual(self.call('GET','/v1/reports/leaders/current')[0],200)
+
+    def test_retention_keeps_latest_historical_momentum_after_four_left_releases(self):
+        generation='20260904T161100-abcdef';release=self.root/'releases'/generation
+        (release/'momentum_60').mkdir(parents=True);(release/'charts').mkdir()
+        report=b'{"strategy_id":"momentum_60","historical":true}'
+        (release/'momentum_60/report.json').write_bytes(report)
+        atomic_json(release/'momentum_60/manifest.json',{'schema_version':1,'generation':generation,
+            'strategy':'momentum_60','as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa',
+            'report_bytes':len(report),'report_sha256':hashlib.sha256(report).hexdigest(),'stock_count':1})
+        chart=b'[{"date":"20260904","close":10}]';(release/'charts/000001.SZ.json').write_bytes(chart)
+        os.utime(release,(0,0))
+
+        outputs=self.outputs()
+        with patch('mobile_server.artifacts.time.strftime',side_effect=[
+                '20260905T161100','20260906T161100','20260907T161100','20260908T161100']):
+            for _ in range(4):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+
+        manifest=current_manifest(self.root,'momentum_60')
+        self.assertEqual(manifest['generation'],generation)
+        report_path=self.call('GET',f'/v1/reports/momentum_60/{generation}/report.json')[1]
+        chart_path=self.call('GET',f'/v1/reports/momentum_60/{generation}/charts/000001.SZ.json')[1]
+        self.assertEqual(report_path.read_bytes(),report)
+        self.assertEqual(chart_path.read_bytes(),chart)

@@ -2,8 +2,10 @@
 import numpy as np
 import pandas as pd
 
-VERSION = 'shortline-1.3.0'
-STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑', 'momentum_60':'60 日风险调整动量'}
+VERSION = 'shortline-1.4.0'
+STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑',
+              'left_rebound':'左侧低吸', 'momentum_60':'60 日风险调整动量'}
+MARKET_THRESHOLDS={'leaders':.4,'pullback':.4,'golden_pit':.4,'left_rebound':.2,'momentum_60':None}
 
 
 def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
@@ -100,6 +102,9 @@ def classify(features_frame: pd.DataFrame, strategy='pullback') -> pd.DataFrame:
     if strategy == 'momentum_60':
         from .momentum import classify_momentum
         return classify_momentum(x)
+    if strategy == 'left_rebound':
+        from .left_rebound import classify_left
+        return classify_left(x)
     return x
 
 

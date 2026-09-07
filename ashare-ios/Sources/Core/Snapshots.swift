@@ -5,7 +5,7 @@ struct MobileManifest:Codable,Equatable {
     let schemaVersion:Int;let generation:String;let strategy:String;let asOf:String
     let reportBytes:Int;let reportSha256:String;let stockCount:Int;let dataRevision:String
     func validate() throws {
-        guard schemaVersion==1,AfterCloseStrategies.ids.contains(strategy),
+        guard schemaVersion==1,AfterCloseStrategies.supportedIds.contains(strategy),
               generation.range(of:"^\\d{8}T\\d{6}-[a-f0-9]{6}$",options:.regularExpression) != nil,
               asOf.range(of:"^\\d{8}$",options:.regularExpression) != nil,
               reportSha256.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil,
@@ -41,7 +41,7 @@ final class OfflineCache {
     let root:URL
     init(root:URL) { self.root=root }
     func load(_ strategy:String) throws -> CachedSnapshot? {
-        guard AfterCloseStrategies.ids.contains(strategy) else { throw MobileFailure.invalidData }
+        guard AfterCloseStrategies.supportedIds.contains(strategy) else { throw MobileFailure.invalidData }
         let pointer=root.appendingPathComponent(strategy+"-current.json")
         guard FileManager.default.fileExists(atPath:pointer.path) else { return nil }
         let manifest=try mobileDecoder().decode(MobileManifest.self,from:Data(contentsOf:pointer));try manifest.validate()

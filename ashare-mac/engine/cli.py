@@ -70,7 +70,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             raise ValueError('日线与交易日历不一致')
         progress(f'计算 {bars.ts_code.nunique():,} 只股票的趋势、量能与风险…')
         computed = features(bars,market_dates=market_dates)
-        if strategy == 'momentum_60':
+        if strategy in ['momentum_60','left_rebound']:
             from .momentum import add_constraints
             computed = add_constraints(computed, factors, limits)
         signals = classify(computed,strategy=strategy)
@@ -85,7 +85,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         all_latest['name'] = all_latest.name.fillna(all_latest.ts_code)
         all_latest['industry'] = all_latest.industry.fillna('未分类')
         all_latest['state'] = np.select([all_latest.ts_code.isin(shortlist.ts_code),all_latest.confirmed,
-            all_latest.watch,all_latest.eligible], ['入选','符合' if strategy=='momentum_60' else '转强','等待','观察'],default='排除')
+            all_latest.watch,all_latest.eligible], ['入选','符合' if strategy in ['momentum_60','left_rebound'] else '转强','等待','观察'],default='排除')
         all_latest['change'] = all_latest.ret1 * 100
         all_latest['rank'] = all_latest.ts_code.map({c:i+1 for i,c in enumerate(shortlist.ts_code)}).fillna(0).astype(int)
         all_latest['adjusted'] = all_latest.ts_code.isin(factors.loc[factors.trade_date==asof,'ts_code'])
@@ -99,6 +99,9 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             keep += METRICS
         if strategy == 'momentum_60':
             from .momentum import METRICS
+            keep += METRICS
+        if strategy == 'left_rebound':
+            from .left_rebound import METRICS
             keep += METRICS
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
@@ -114,6 +117,8 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         if strategy == 'momentum_60':
             warnings[0] = '此处历史事件按当前股票名称过滤，存在名单与 ST 状态回溯偏差；本策略不设行业限额。'
             warnings.insert(0, '新增研究策略：2026 年 1–4 月选择期资金账本胜率 48.69%，净收益 +1.99%；开发期净收益 -6.34%，尚未通过完整验证。此页全期事件统计属于事后观察，不能替代封存研究。')
+        if strategy == 'left_rebound':
+            warnings.insert(0,'左侧观察：超跌与抛压收敛不代表底部已确认；固定规则尚未通过独立样本外与模拟实盘验证。')
         if missing_adj: warnings.insert(0,f'最新日线有 {missing_adj} 只缺复权因子；连续价格信号仅供观察。')
         if missing_limit: warnings.insert(0,f'最新日线有 {missing_limit} 只缺涨跌停价；缺失事件不能计为可成交。')
         if stale_sessions: warnings.insert(0,f'行情落后交易日历 {stale_sessions} 个交易日，请更新数据。')
@@ -131,8 +136,10 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             sources.append(dict(kind=kind,rows=len(dataset),files=len(paths),
                 start=str(dataset.trade_date.min()) if len(dataset) else '',
                 end=str(dataset.trade_date.max()) if len(dataset) else ''))
+        from .strategy import MARKET_THRESHOLDS
         report = dict(schema_version=1, version=VERSION, as_of=asof, generated_at=now.isoformat(),
             strategy_id=strategy,strategy_name=STRATEGIES[strategy],data_revision=data_revision,
+            market_filter_threshold=MARKET_THRESHOLDS[strategy],
             source_root=str(root), overlay_root=str(overlay), price_rows=len(daily),
             universe_count=len(latest), eligible_count=int(latest.eligible.sum()),
             confirmed_count=int(latest.confirmed.sum()), shortlist_count=len(shortlist),

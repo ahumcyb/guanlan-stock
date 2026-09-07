@@ -9,6 +9,7 @@ from pathlib import Path
 from engine.snapshot_protocol import FILE_NAMES, revision_for, validate_manifest,prune_snapshots
 from deployment.ssh_gateway import resolve_request
 from engine.remote import sync,SshTransport
+from engine import remote
 from deployment.publish import verify
 
 
@@ -140,6 +141,17 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((self.cache/'current').resolve(),result)
         sync({},self.cache,self.transport)
         self.assertEqual(self.transport.transfers,5)
+
+    def test_pre_cached_build_waits_for_server_confirmation_and_avoids_download(self):
+        package=self.root/'package';(package/'raw').mkdir(parents=True)
+        import shutil
+        for name in FILE_NAMES:shutil.copy2(self.source/name,package/'raw'/name)
+        (package/'manifest.json').write_text(json.dumps(self.value))
+        remote.cache_built_snapshot(package,self.cache)
+        self.assertFalse((self.cache/'current').exists())
+        sync({},self.cache,self.transport)
+        self.assertEqual(self.transport.transfers,0)
+        self.assertEqual((self.cache/'current').resolve().name,self.value['revision'])
 
     def test_corrupt_transfer_cannot_replace_previous_cache(self):
         previous=sync({},self.cache,self.transport)

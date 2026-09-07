@@ -3,7 +3,7 @@ import Combine
 
 @MainActor final class MobileStore:ObservableObject {
     @Published var snapshot:CachedSnapshot?
-    @Published var strategy=UserDefaults.standard.string(forKey:"mobileStrategy") ?? "leaders"
+    @Published var strategy=AfterCloseStrategies.activeChoice(UserDefaults.standard.string(forKey:"mobileStrategy"))
     @Published var favorites=Set(UserDefaults.standard.stringArray(forKey:"mobileFavorites") ?? [])
     @Published var status:ServerStatus?
     @Published var busy=false

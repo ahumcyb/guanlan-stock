@@ -1,9 +1,13 @@
 import Foundation
 
 enum AfterCloseStrategies {
-    static let ids = ["leaders", "pullback", "golden_pit", "momentum_60"]
+    static let ids = ["leaders", "pullback", "golden_pit", "left_rebound"]
+    static let historicalIds = ["leaders", "pullback", "golden_pit", "momentum_60"]
+    static let supportedIds = ids + ["momentum_60"]
+    static func validGroup(_ values:[String])->Bool { values.count==4 && (Set(values)==Set(ids) || Set(values)==Set(historicalIds)) }
+    static func activeChoice(_ saved:String?)->String { saved=="momentum_60" ? "left_rebound" : (ids.contains(saved ?? "") ? saved!:"leaders") }
     static func shortName(_ id:String)->String {
-        ["leaders":"流动性趋势", "pullback":"缩量回踩", "golden_pit":"黄金坑", "momentum_60":"60 日动量"][id] ?? id
+        ["leaders":"流动性趋势", "pullback":"缩量回踩", "golden_pit":"黄金坑", "left_rebound":"左侧低吸", "momentum_60":"60 日动量（历史）"][id] ?? id
     }
 }
 
@@ -44,6 +48,8 @@ struct Stock: Decodable, Identifiable, Hashable {
     let pitContraction: Double?; let pitRecoveryVolume: Double?; let pitPeak: Double?; let pitLow: Double?
     let ma60Slope: Double?; let ret60: Double?
     let vol60: Double?; let momentumRatio: Double?
+    let leftRsi5:Double?;let leftDrawdown60:Double?;let leftVolume5:Double?
+    let leftMa60Slope10:Double?;let leftDistanceLow20:Double?
     var id: String { tsCode }
     var symbol: String { String(tsCode.prefix(6)) }
 }
@@ -91,6 +97,23 @@ struct Report: Decodable {
     var isLeaders:Bool { strategyId=="leaders" }
     var isGoldenPit:Bool { strategyId=="golden_pit" }
     var isMomentum60:Bool { strategyId=="momentum_60" }
+    var isLeft:Bool { strategyId=="left_rebound" }
+    var conditionLabel:Bool { isMomentum60 || isLeft }
+}
+
+enum LeftReboundGuide {
+    static let summary="用最新完整日线寻找超跌、缩量且抛压开始收敛的股票。允许小阴线和价格仍在 MA10 下方，作为左侧观察候选；目前尚未证明获利优势。"
+    static let rules=[
+        "沪深非 ST / 退市股票，至少 80 根日线、最近 60 个市场日连续；价格不低于 3 元，20 日平均成交额不低于 1 亿元，ATR / 价格不超过 6%，当日复权因子与涨跌停价完整。",
+        "低位区域：相对近 60 日最高价回撤 10%–25%，低于 MA20 2%–12%，距离近 20 日最低价不超过 8%。",
+        "短期超跌：最近 5 日连续价格收益为 -12% 至 -3%，5 日 RSI 不超过 35。RSI 采用 Wilder 指数平滑。",
+        "中期约束：MA60 相比 10 日前的跌幅不超过 3%，排除均线快速恶化。",
+        "抛压收敛：当日成交量不超过前 5 个完整交易日均量的 90%；当日涨跌幅 -4% 至 +2%，收于日内振幅的上部 60%，且没有封在跌停价。无需当日上涨或收复 MA10。",
+        "市场基础池处于 MA20 上方的比例至少为 20%；不足时暂停新候选。最多精选 10 只，每个行业最多 2 只。",
+        "分数：超卖程度 25、低位位置 25、缩量 20、收盘承接 15、流动性 15。精选按分数与代码排序，分数不代表获利概率。",
+        "低位参考是近 20 日低价。失效参考取该低价下方 2% 与收盘价减 2 ATR 的较高者；参考价不保证成交，历史事件检验未模拟盘中止损。",
+        "固定规则用于 1–5 个交易日观察，尚未通过独立样本外及模拟实盘验证。左侧条件出现后仍可能继续下跌，历史统计与昨日精选的实际次日表现分别展示。"
+    ]
 }
 
 enum Momentum60Guide {

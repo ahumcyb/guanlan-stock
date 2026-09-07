@@ -14,7 +14,8 @@ import Foundation
         do { try cache.save(data+Data([32]),manifest:manifest);assertionFailure("Corrupt data was accepted") } catch {}
         let cached=try cache.load("leaders");assert(cached?.manifest==manifest)
         var cachedStrategies=["leaders"]
-        for strategy in ["pullback","golden_pit","momentum_60"] {
+        assert(AfterCloseStrategies.activeChoice("momentum_60")=="left_rebound")
+        for strategy in ["pullback","golden_pit","left_rebound","momentum_60"] {
             let folder=fixture.appendingPathComponent(strategy)
             // Old published fixtures remain valid during a staged app/server update.
             guard FileManager.default.fileExists(atPath:folder.appendingPathComponent("manifest.json").path) else { continue }
@@ -22,6 +23,14 @@ import Foundation
             let snapshot=try cache.save(Data(contentsOf:folder.appendingPathComponent("report.json")),manifest:other)
             cachedStrategies.append(strategy)
             assert(snapshot.report.strategyId==strategy)
+            if strategy=="left_rebound" {
+                assert(snapshot.report.isLeft && snapshot.report.shortlistCount<=10)
+                for stock in snapshot.report.stocks where stock.state=="入选" {
+                    assert((0...35).contains(stock.leftRsi5!))
+                    assert((0.10...0.25).contains(stock.leftDrawdown60!))
+                    assert(stock.leftVolume5!<=0.9)
+                }
+            }
             if strategy=="momentum_60" {
                 assert(snapshot.report.isMomentum60 && snapshot.report.shortlistCount<=5)
                 for stock in snapshot.report.stocks where stock.state=="入选" {

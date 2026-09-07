@@ -56,7 +56,7 @@ struct DailySummaryView:View {
                     pageTitle("每日收盘总结",subtitle:"交易日 16:10 起核验行情 · Mac 优先更新与选股")
                     Spacer()
                     Button("同步") { Task { await refresh() } }.disabled(store.busy)
-                    Button("补生成最近收盘日") { Task { await store.request("generate",runtime:app.runtime);await refresh() } }.disabled(store.busy)
+                    Button("重新核验并生成") { Task { await store.request("generate",runtime:app.runtime,values:["refresh_facts":true]);await refresh() } }.disabled(store.busy)
                     Button("总结设置") { loadSettings();showSettings.toggle() }.disabled(store.state==nil)
                 }
                 HStack {
@@ -79,11 +79,13 @@ struct DailySummaryView:View {
                         Badge(text:report.analysis.status=="ready" ? "DeepSeek 解读":(report.analysis.status=="pending" ? "分析中":"量价摘要"),color:report.analysis.status=="ready" ? Palette.teal:Palette.amber)
                     }
                     marketPanel(report.evidence)
-                    analysisPanel(report.analysis)
+                    performancePanel(report.evidence.performance)
+                    analysisPanel(report.analysis,showStrategy:report.evidence.performance != nil)
                     HStack(alignment:.top,spacing:16) {
                         sectorPanel("相对较强行业",rows:report.evidence.sectorsStrong)
                         sectorPanel("相对较弱行业",rows:report.evidence.sectorsWeak)
                     }
+                    Text("本日新选 · 留待下一交易日评价").font(.headline)
                     ForEach(report.evidence.strategies) { strategy in strategyPanel(strategy) }
                     ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.system(size:11)).foregroundStyle(Palette.amber) }
                     Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的 ProMax 收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
@@ -141,13 +143,34 @@ struct DailySummaryView:View {
             }
         }
     }
-    private func analysisPanel(_ analysis:DailyAnalysis)->some View {
+    private func performancePanel(_ performance:DailyPerformance?)->some View {
+        Panel { VStack(alignment:.leading,spacing:16) {
+            Text("昨日精选 · 今日结算").font(.headline)
+            if let performance {
+                Text("\(dateText(performance.signalDate ?? "—")) 精选 → \(dateText(performance.evaluationDate)) 收盘").font(.caption).foregroundStyle(Palette.muted)
+                Text(performance.message ?? "等权观察口径，未计交易费用及成交约束。").font(.system(size:11)).foregroundStyle(Palette.muted)
+                ForEach(performance.strategies) { group in
+                    VStack(alignment:.leading,spacing:9) {
+                        HStack { Text(group.name).font(.system(size:13,weight:.semibold));if !AfterCloseStrategies.ids.contains(group.id) { Badge(text:"历史策略",color:Palette.amber) };Spacer();Text(group.meanReturnPct.map(dailyChange) ?? "—").monospacedDigit().foregroundStyle((group.meanReturnPct ?? 0)>=0 ? Palette.up:Palette.down) }
+                        Text("昨日 \(group.selectedCount) 只 · 已结算 \(group.settledCount) 只 · 上涨 \(group.upCount) / 下跌 \(group.downCount) / 平盘 \(group.flatCount)").font(.system(size:11)).foregroundStyle(Palette.muted)
+                        if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(Palette.amber) }
+                        if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(Palette.muted) }
+                        DisclosureGroup("逐股结算") {
+                            ForEach(group.rows) { row in HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(row.returnPct.map(dailyChange) ?? (row.reason ?? "未结算")) }.font(.system(size:11)).padding(.top,5) }
+                        }.font(.system(size:11))
+                    }.padding(.vertical,5)
+                }
+                if !(performance.newStrategyIds ?? []).isEmpty { Text("新启用策略尚无前一交易日精选，下一个交易日起才能结算。").font(.caption).foregroundStyle(Palette.muted) }
+            } else { Text("旧版总结尚未包含上一交易日精选结算。可重新核验并生成最近收盘日。").font(.caption).foregroundStyle(Palette.muted) }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
+    }
+    private func analysisPanel(_ analysis:DailyAnalysis,showStrategy:Bool)->some View {
         Panel {
             VStack(alignment:.leading,spacing:16) {
                 if analysis.status=="pending" { ProgressView("正在生成 DeepSeek 分析…") }
                 paragraph("市场量价",analysis.marketView)
                 paragraph("行业分化",analysis.sectorView)
-                paragraph("四策略观察",analysis.strategyView)
+                if showStrategy { paragraph("昨日精选结算",analysis.strategyView) }
                 paragraph("下一交易日",analysis.watchNext)
                 ForEach(analysis.risks,id:\.self) { Text("· "+$0).font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(4) }
             }.frame(maxWidth:.infinity,alignment:.leading)
@@ -167,7 +190,7 @@ struct DailySummaryView:View {
         Panel { VStack(alignment:.leading,spacing:12) {
             HStack { Text(strategy.name).font(.headline);Spacer();Badge(text:"\(strategy.shortlistCount) 只精选") }
             Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.system(size:11)).foregroundStyle(Palette.muted)
-            if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 40% 门槛，暂停新候选。").font(.system(size:11)).foregroundStyle(Palette.amber) }
+            if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.system(size:11)).foregroundStyle(Palette.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.system(size:12)).foregroundStyle(Palette.muted) }
             ForEach(strategy.picks) { stock in HStack { Text(stock.name);Text(String(stock.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(decimal(stock.close));Text(dailyChange(stock.change)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down) }.font(.system(size:12)) }
         } }

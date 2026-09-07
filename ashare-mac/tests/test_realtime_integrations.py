@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 from engine.intraday_runner import IntradayProvider, canonical_snapshots, incomplete_days, check_day, checked_shares
 from mobile_server.notifications import send_bark, deepseek_review
+from engine.intraday import local_now
 
 
 class Response:
@@ -50,15 +51,18 @@ class RealtimeIntegrationTests(unittest.TestCase):
             request=factory.return_value.open.call_args.args[0]
             self.assertNotIn(client._secret,request.full_url)
 
-    def test_promax_wildcard_results_are_intersected_with_explicit_universe(self):
+    def test_unrequested_primary_rows_are_rejected_before_using_fallback(self):
+        now=local_now().replace(year=2026,month=9,day=7,hour=14,minute=45,second=0,microsecond=0)
+        sample=dict(name='测试',pre_close=10,open=10,high=10.5,low=10,close=10.4,vol=100,amount=1040,trade_time=now.isoformat())
         class Fake(IntradayProvider):
             def __init__(self):pass
             def get(self, api, **args):
-                sample=dict(name='测试',pre_close=10,open=10,high=10.5,low=10,close=10.4,vol=100,amount=1040,trade_time='20260904')
-                return pd.DataFrame([dict(sample,ts_code=c) for c in ['600000.SH','600001.SH']]) if args['ts_code']=='6*.SH' else pd.DataFrame()
-        universe=['600000.SH']+[f'{i:06}.SZ' for i in range(1001)]
-        rows=Fake().quotes(universe)
+                return pd.DataFrame([dict(sample,ts_code=c) for c in ['600000.SH','600001.SH']])
+        with patch('engine.intraday_runner.local_now',return_value=now), \
+             patch('engine.intraday_runner.sina_quotes',return_value=[dict(sample,ts_code='600000.SH')]) as fallback:
+            rows=Fake().quotes(['600000.SH'])
         self.assertEqual([r['ts_code'] for r in rows],['600000.SH'])
+        fallback.assert_called_once_with(['600000.SH'])
 
     def test_duplicate_transport_timestamp_cannot_refresh_an_old_quote(self):
         row=dict(ts_code='600000.SH',name='测试',pre_close=10,open=10,high=10.5,low=10,close=10.4,vol=100,amount=1040,trade_time='20260904')

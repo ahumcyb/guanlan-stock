@@ -25,7 +25,7 @@ API 采用 `/v1`，所有业务接口要求 `Authorization: Bearer <token>`。�
 |---|---|---|
 | GET | /health | 不含数据或凭据的健康状态 |
 | GET | /v1/status | 当前数据日期、任务状态、更新能力 |
-| GET | /v1/reports/{leaders,pullback,golden_pit,momentum_60}/current | 固定版本清单，报告大小、SHA-256、日期 |
+| GET | /v1/reports/{leaders,pullback,golden_pit,left_rebound}/current | 固定版本清单，报告大小、SHA-256、日期；momentum_60 仍可读取历史版本 |
 | GET | /v1/reports/{strategy}/{generation}/report.json | 该版本完整研究快照，最大 12 MiB |
 | GET | /v1/reports/{strategy}/{generation}/charts/{code}.json | 该快照最多120根 K 线，最大128 KiB |
 | POST | /v1/jobs | `{"action":"recompute"或"refresh","request_id":"规范 UUID"}`，单任务、冷却、去重，返回202 |

@@ -73,6 +73,12 @@ def run_job(client,config,job):
         execute(['mobile_server.build','--data-root',root/'market/current','--overlay',root/'overlay','--work',work,'--action',job['action'],*closing_arguments(job)])
         if lost.is_set():raise LostLease()
         client.request('/v1/worker/uploads/'+job['id'],upload=work/'bundle.zip',lease=job['lease'])
+        try:
+            from engine.remote import cache_built_snapshot
+            revision=json.loads((work/'packages/latest.json').read_text())['revision']
+            cache_built_snapshot(work/'packages'/revision,root/'market')
+        except (OSError,ValueError,KeyError):
+            print('本机镜像预缓存未完成，已上传的服务器任务继续校验',flush=True)
         print('Mac 结果已上传，服务器正在校验发布',flush=True)
     except Exception:
         if not lost.is_set():

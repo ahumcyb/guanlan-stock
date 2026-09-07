@@ -64,7 +64,7 @@ def normalize_quote(row, now, index=False):
     except ValueError:
         observed = timestamp(row.get('updated_at'))
         basis = 'provider_updated_at'
-        trade_date = str(row.get('trade_time', '')).replace('-', '')[:8]
+        trade_date = str(row.get('trade_time') or '').replace('-', '')[:8]
         if trade_date and trade_date != observed.strftime('%Y%m%d'):
             raise ValueError('行情交易日期与更新时间不一致')
     age = (now - observed).total_seconds()

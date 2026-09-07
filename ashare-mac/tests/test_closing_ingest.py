@@ -207,12 +207,12 @@ class ClosingIngestTests(unittest.TestCase):
         self._assert_rejected_before_market_publish('收盘证明与实际数据不一致')
 
     def test_one_report_with_a_different_proof_is_rejected_before_market_publication(self):
-        name = 'research/momentum_60/report.json'
+        name = 'research/left_rebound/report.json'
         report = json.loads(self.entries[name])
         report['last_update']['close_attestation']['tables']['daily']['sha256'] = '0' * 64
         raw = self._json(report)
         self.entries[name] = raw
-        manifest_name = 'research/momentum_60/manifest.json'
+        manifest_name = 'research/left_rebound/manifest.json'
         manifest = json.loads(self.entries[manifest_name])
         manifest.update(report_bytes=len(raw), report_sha256=hashlib.sha256(raw).hexdigest())
         self.entries[manifest_name] = self._json(manifest)

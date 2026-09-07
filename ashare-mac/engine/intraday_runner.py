@@ -2,6 +2,7 @@
 import json
 import math
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timedelta
 from pathlib import Path
@@ -14,8 +15,10 @@ import pandas as pd
 from .data import atomic_json, combine, source_paths, full_market_dates, minimum_market_rows, validate
 from .intraday import CODE, local_now, normalize_quote, screen
 from .provider import BASE_URL, NoRedirect, ProMax, parse_response
+from .sina_quotes import fetch_quotes as sina_quotes
 
 FIELDS = 'ts_code,name,pre_close,open,high,low,close,vol,amount,trade_time'
+QUOTE_FIELDS = FIELDS + ',updated_at'
 
 
 def incomplete_days(counts, days, previous):
@@ -66,7 +69,8 @@ class IntradayProvider(ProMax):
                           headers={'X-API-Key': self._secret, 'Accept': 'application/json'})
         for attempt in range(2):
             try:
-                with build_opener(NoRedirect()).open(request, timeout=5 if api=='rt_min_daily' else 25) as response:
+                timeout=5 if api=='rt_min_daily' else (6 if api in {'rt_k','rt_idx_k'} else 25)
+                with build_opener(NoRedirect()).open(request, timeout=timeout) as response:
                     raw = response.read(4 * 1024 * 1024 + 1)
                 if len(raw) > 4 * 1024 * 1024 or self._secret.encode() in raw:
                     raise ValueError()
@@ -75,7 +79,7 @@ class IntradayProvider(ProMax):
                     time.sleep(.5)
                     continue
                 frame = parse_response(payload)
-                if len(frame) > 6500:
+                if len(frame) > 6500 or self._secret in frame.to_json(force_ascii=False):
                     raise ValueError()
                 return frame
             except HTTPError as error:
@@ -88,32 +92,75 @@ class IntradayProvider(ProMax):
                 raise ValueError('ProMax ' + api + ' 响应无效') from None
             time.sleep(.5)
 
-    def quotes(self, codes):
-        frames = []
-        self.conflicting_quotes = 0
-        batches = [codes[i:i + 200] for i in range(0, len(codes), 200)]
-        if len(codes) > 6500 or len(set(codes)) != len(codes):
+    @staticmethod
+    def valid_rows(rows,codes,index=False):
+        wanted=set(codes);valid={};conflicts=set();now=local_now()
+        for original in rows:
+            if not isinstance(original,dict) or original.get('ts_code') not in wanted:continue
+            row={key:original[key] for key in QUOTE_FIELDS.split(',') if key in original}
+            try:normalize_quote(row,now,index=index)
+            except (ValueError,TypeError):continue
+            code=row['ts_code']
+            if code in valid and valid[code]!=row:conflicts.add(code)
+            else:valid[code]=row
+        return {code:row for code,row in valid.items() if code not in conflicts}
+
+    def quote_batch(self,codes,fallback,api='rt_k',index=False):
+        primary={};diagnostic=dict(primary_requests=0,fallback_requests=0,primary_rejected=0,
+                                   primary_errors=0,fallback_errors=0,conflicts=0)
+        if not fallback.is_set():
+            diagnostic['primary_requests']=1
+            try:
+                # Explicit codes work with both ProMax backends; retain its source update time.
+                frame=self.get(api,ts_code=','.join(codes),fields=QUOTE_FIELDS)
+                if not frame.empty:
+                    if 'ts_code' not in frame or not set(frame.ts_code).issubset(set(codes)):
+                        raise ValueError('主源股票集合不一致')
+                    frame=frame.copy()
+                    if 'trade_time' not in frame:frame['trade_time']=''
+                    frame,conflicts=canonical_snapshots(frame);diagnostic['conflicts']=conflicts
+                    primary=self.valid_rows(json.loads(frame.to_json(orient='records')),codes,index)
+            except Exception:
+                diagnostic['primary_errors']=1
+                primary={}
+        missing=[code for code in codes if code not in primary]
+        diagnostic['primary_rejected']=len(missing) if diagnostic['primary_requests'] else 0
+        rows={code:dict(row,quote_source='promax') for code,row in primary.items()}
+        if missing:
+            # Once the primary is broadly unusable, don't repeat slow failed calls for every batch.
+            if len(missing)>len(codes)*.1:fallback.set()
+            diagnostic['fallback_requests']=1
+            try:
+                replacement=self.valid_rows(sina_quotes(missing),missing,index)
+                rows.update({code:dict(row,quote_source='sina') for code,row in replacement.items()})
+            except Exception:
+                diagnostic['fallback_errors']=1
+        diagnostic.update(promax_quotes=sum(row['quote_source']=='promax' for row in rows.values()),
+                          sina_quotes=sum(row['quote_source']=='sina' for row in rows.values()),
+                          unavailable=len(codes)-len(rows))
+        return list(rows.values()),diagnostic
+
+    def quotes(self,codes):
+        if (not isinstance(codes,list) or len(codes)>6500 or len(set(codes))!=len(codes)
+                or any(not isinstance(code,str) or not CODE.fullmatch(code) for code in codes)):
             raise ValueError('股票集合无效')
-        wanted = set(codes)
-        # Documented exchange-qualified wildcards avoid 25 serial URL batches.
-        queries = ['6*.SH', '0*.SZ', '3*.SZ'] if len(codes) > 1000 else [','.join(b) for b in batches]
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            futures = {pool.submit(self.get, 'rt_k', ts_code=query, fields=FIELDS): query for query in queries}
-            for future in as_completed(futures):
-                frame = future.result()
-                if frame.empty:
-                    continue
-                if 'ts_code' not in frame:
-                    raise ValueError('实时行情代码集合不一致')
-                if '*' not in futures[future] and not set(frame.ts_code).issubset(set(futures[future].split(','))):
-                    raise ValueError('实时行情返回未请求的股票')
-                frame = frame[frame.ts_code.isin(wanted)]
-                frame, conflicts = canonical_snapshots(frame)
-                self.conflicting_quotes += conflicts
-                frames.extend(json.loads(frame.to_json(orient='records')))
-        if len({r['ts_code'] for r in frames}) != len(frames):
-            raise ValueError('实时行情返回重复股票')
-        return frames
+        start=time.monotonic();batches=[codes[i:i+200] for i in range(0,len(codes),200)]
+        fallback=threading.Event();rows=[];diagnostics=[]
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures=[pool.submit(self.quote_batch,batch,fallback) for batch in batches]
+            for future in futures:
+                values,diagnostic=future.result();rows.extend(values);diagnostics.append(diagnostic)
+        self.quote_diagnostics={name:sum(item[name] for item in diagnostics) for name in
+            ['primary_requests','fallback_requests','primary_rejected','primary_errors','fallback_errors',
+             'promax_quotes','sina_quotes','unavailable','conflicts']}
+        self.quote_diagnostics.update(batches=len(batches),elapsed_seconds=round(time.monotonic()-start,3))
+        self.conflicting_quotes=self.quote_diagnostics['conflicts']
+        return rows
+
+    def index_quote(self,code='000300.SH'):
+        if code!='000300.SH':raise ValueError('指数代码无效')
+        rows,self.index_diagnostics=self.quote_batch([code],threading.Event(),api='rt_idx_k',index=True)
+        return rows[0] if rows else None
 
 
 def read_calendar(root, cache, provider=None):
@@ -218,9 +265,12 @@ def features_for(root, cache, provider, now=None):
     return value
 
 
-def run(root, cache, kind='screen', previous_candidates=None, provider=None):
+def run(root, cache, kind='screen', previous_candidates=None, provider=None, progress=None):
     root = root.resolve()
+    progress=progress or (lambda stage:None)
+    progress('credentials')
     provider = provider or IntradayProvider(); now = local_now()
+    progress('history')
     value = features_for(root, cache, provider, now)
     report = dict(schema_version=1, date=now.strftime('%Y%m%d'), generated_at=now.timestamp(),
                   previous_date=value['previous'], source_version=value['source_version'], kind=kind,
@@ -239,7 +289,16 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None):
     if not codes:
         report.update(status='empty', message='上一交易日没有可复查的尾盘候选')
         return report
+    progress('quotes')
     raw = provider.quotes(codes); report['quote_count'] = len(raw)
+    diagnostics=getattr(provider,'quote_diagnostics',None)
+    if diagnostics:
+        report['quote_diagnostics']=diagnostics
+        report['warnings'].append(f"本轮有效报价：ProMax {diagnostics['promax_quotes']}只，新浪备用 {diagnostics['sina_quotes']}只；时间来自对应报价记录。")
+        if diagnostics['primary_rejected']:
+            report['warnings'].append('部分 ProMax 报价不可用或未通过时间/数值校验，已尝试获取完整的备用报价。')
+        if diagnostics['fallback_errors']:
+            report['warnings'].append(f"备用行情有 {diagnostics['fallback_errors']} 个批次获取失败；未使用无效报价。")
     if getattr(provider, 'conflicting_quotes', 0):
         report['warnings'].append(f"剔除{provider.conflicting_quotes}只存在冲突快照的股票")
     if len(raw) < len(codes):
@@ -252,7 +311,8 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None):
             pass
     report['fresh_count'] = len(quotes);report['generated_at'] = now.timestamp()
     if not quotes or len(quotes) < len(codes) * .90:
-        report.update(status='blocked', message='同日新鲜行情覆盖不足90%，停止本轮选股')
+        report.update(status='blocked',failure_code='quotes_incomplete',failure_stage='quotes',
+                      message=f'同日新鲜行情 {len(quotes)}/{len(codes)}，不足90%，本轮停止筛选')
         return report
     if kind == 'review':
         refs = {r['ts_code']: r for r in (previous_candidates or [])}
@@ -263,26 +323,39 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None):
                 change=round(change, 3), quote_at=q['quote_at'], note='跌幅达到2%观察线' if change <= -2 else ('涨幅达到3%观察线' if change >= 3 else '距10:00检查截止')))
         report['message'] = '昨日候选早盘复查；参考价是筛选快照，并非持仓成本'
         return report
-    index_raw = provider.get('rt_idx_k', ts_code='000300.SH', fields=FIELDS)
-    if len(index_raw) != 1 or index_raw.iloc[0].ts_code != '000300.SH':
-        raise ValueError('沪深300实时指数不可用')
-    index = normalize_quote(index_raw.iloc[0].to_dict(), local_now(), index=True)
+    progress('index')
+    index_raw=provider.index_quote()
+    report['index_diagnostics']=getattr(provider,'index_diagnostics',{})
+    if index_raw is None:
+        report.update(status='blocked',failure_code='index_unavailable',failure_stage='index',
+                      message='沪深300主源与备用报价均未通过时间/数值校验，本轮停止筛选')
+        return report
+    index=normalize_quote(index_raw,local_now(),index=True)
+    report['index_source']=index_raw.get('quote_source','promax')
+    if report['index_source']=='sina':report['warnings'].append('沪深300使用新浪备用报价的源站交易时间。')
     report['index_change'] = round(index['change'], 3);report['index_quote_at'] = index['quote_at']
     # The second pass requests minutes only for shortlisted candidates, never 5000 N+1 calls.
     preliminary = screen(value['features'], quotes, index, local_now(), value['previous'])
     minutes = {}
-    for candidate in preliminary['golden'][:10]:
-        try:
-            frame = provider.get('rt_min_daily', ts_code=candidate['ts_code'], freq='1MIN')
-            if not frame.empty and 'ts_code' in frame and set(frame.ts_code) == {candidate['ts_code']}:
-                minutes[candidate['ts_code']] = json.loads(frame.to_json(orient='records'))
-        except ValueError:
-            report['warnings'].append('实时分钟接口暂不可用，分时条件保持待核验')
-            break
+    progress('minutes')
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        requests={pool.submit(provider.get,'rt_min_daily',ts_code=row['ts_code'],freq='1MIN'):row['ts_code']
+                  for row in preliminary['golden'][:10]}
+        for future in as_completed(requests):
+            try:
+                frame=future.result();code=requests[future]
+                if not frame.empty and 'ts_code' in frame and set(frame.ts_code)=={code}:
+                    minutes[code]=json.loads(frame.to_json(orient='records'))
+            except Exception:
+                report['warnings'].append('实时分钟接口暂不可用，分时条件保持待核验')
+                for pending in requests:pending.cancel()
+                break
+    progress('validation')
     finished = local_now()
     # Re-check freshness after all network requests, including slow minute requests.
     if any((finished.timestamp() - q['quote_at']) > 180 for q in quotes) or finished.timestamp() - index['quote_at'] > 180:
-        report.update(status='blocked', message='采集耗时导致行情过时，停止本轮选股')
+        report.update(status='blocked',failure_code='quotes_expired',failure_stage='validation',
+                      message='采集耗时导致行情过时，停止本轮选股')
         return report
     report['strategies'] = screen(value['features'], quotes, index, finished, value['previous'], minutes)
     report['generated_at'] = finished.timestamp()

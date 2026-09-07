@@ -7,7 +7,13 @@ import time
 from pathlib import Path
 from engine.snapshot_protocol import REVISION
 
-STRATEGIES=('leaders','pullback','golden_pit','momentum_60')
+STRATEGIES=('leaders','pullback','golden_pit','left_rebound')
+HISTORICAL_STRATEGIES=('leaders','pullback','golden_pit','momentum_60')
+SUPPORTED_STRATEGIES=(*STRATEGIES,'momentum_60')
+
+
+def valid_strategy_group(ids):
+    return len(ids)==4 and set(ids) in (set(STRATEGIES),set(HISTORICAL_STRATEGIES))
 GENERATION=re.compile(r'^\d{8}T\d{6}-[a-f0-9]{6}$')
 CODE=re.compile(r'^\d{6}\.(SH|SZ|BJ)$')
 MAX_REPORT=12*1024*1024
@@ -39,6 +45,25 @@ def read_generation(output):
     data=checked_file(output,folder/'report.json',MAX_REPORT).read_bytes()
     if hashlib.sha256(data).hexdigest()!=pointer['sha256']:raise ValueError('Report checksum mismatch')
     return folder,json.loads(data)
+
+
+def preserved_legacy_generations(releases):
+    """Retain the last verified report and shared charts for retired clients."""
+    releases=releases.resolve();preserved=set()
+    for strategy in set(SUPPORTED_STRATEGIES)-set(STRATEGIES):
+        for folder in sorted(releases.iterdir(),key=lambda p:p.name,reverse=True):
+            if not GENERATION.fullmatch(folder.name) or folder.is_symlink() or not folder.is_dir():continue
+            try:
+                manifest=json.loads(checked_file(releases,folder/strategy/'manifest.json',65536).read_text())
+                data=checked_file(releases,folder/strategy/'report.json',MAX_REPORT).read_bytes()
+                report=json.loads(data)
+                if (manifest['strategy']!=strategy or manifest['generation']!=folder.name
+                        or manifest['report_bytes']!=len(data)
+                        or manifest['report_sha256']!=hashlib.sha256(data).hexdigest()
+                        or report['strategy_id']!=strategy):continue
+                preserved.add(folder.name);break
+            except (OSError,ValueError,KeyError,TypeError):continue
+    return preserved
 
 
 def publish(outputs,root,data_revision):
@@ -86,7 +111,7 @@ def publish(outputs,root,data_revision):
         if old and old.is_dir() and old.parent==releases and old.name!=generation:
             os.utime(old,None)  # Retirement grace, not original creation age.
         versions=sorted([p for p in releases.iterdir() if GENERATION.fullmatch(p.name) and p.is_dir() and not p.is_symlink()],key=lambda p:p.stat().st_mtime,reverse=True)
-        protected={generation,*[p.name for p in versions if p.name!=generation][:2]}
+        protected={generation,*[p.name for p in versions if p.name!=generation][:2]}|preserved_legacy_generations(releases)
         for version in versions:
             if version.name not in protected and time.time()-version.stat().st_mtime>86400:shutil.rmtree(version)
         return manifests
@@ -95,7 +120,11 @@ def publish(outputs,root,data_revision):
 
 
 def current_manifest(root,strategy):
-    if strategy not in STRATEGIES:raise ValueError('Unknown strategy')
+    if strategy not in SUPPORTED_STRATEGIES:raise ValueError('Unknown strategy')
     release=(root/'current').resolve(strict=True)
     if release.parent!=root.resolve()/'releases' or not GENERATION.fullmatch(release.name):raise ValueError('Invalid current snapshot')
+    if strategy not in STRATEGIES and not (release/strategy/'manifest.json').exists():
+        for generation in sorted(preserved_legacy_generations(root/'releases'),reverse=True):
+            previous=root.resolve()/'releases'/generation
+            if (previous/strategy/'manifest.json').is_file():release=previous;break
     return json.loads(checked_file(root,release/strategy/'manifest.json',65536).read_text())

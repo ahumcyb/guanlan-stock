@@ -81,6 +81,27 @@ def verify_files(directory,manifest):
             raise ValueError(f'{entry["name"]} 行数校验失败')
 
 
+def cache_built_snapshot(source,cache):
+    """Retain already computed public tables; only sync may activate their pointer."""
+    source=Path(source).resolve();cache=Path(cache).resolve();cache.mkdir(parents=True,exist_ok=True)
+    manifest=validate_manifest(json.loads((source/'manifest.json').read_text()));verify_files(source,manifest)
+    with (cache/'.sync.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        releases=cache/'releases';releases.mkdir(exist_ok=True)
+        destination=releases/manifest['revision']
+        if destination.exists():
+            local=validate_manifest(json.loads((destination/'manifest.json').read_text()))
+            if local['files']!=manifest['files']:raise ValueError('已缓存版本内容不同')
+            verify_files(destination,manifest);return destination
+        stage=Path(tempfile.mkdtemp(prefix='.precache-',dir=cache))
+        try:
+            shutil.copytree(source,stage,dirs_exist_ok=True);verify_files(stage,manifest)
+            os.rename(stage,destination)
+        finally:
+            if stage.exists():shutil.rmtree(stage)
+        return destination
+
+
 def sync(config,cache,transport=None):
     cache=cache.resolve();cache.mkdir(parents=True,exist_ok=True)
     with (cache/'.sync.lock').open('w') as lock:

@@ -111,8 +111,8 @@ class DailyStore:
                     'message':current.get('message','交易日 16:10 后自动核验行情并生成总结'),
                     'retry_at':current.get('retry_at'),'next_run_at':min(future) if future else None})
 
-    def request(self,retry_ai=False):
-        if type(retry_ai) is not bool:raise ValueError('请求参数无效')
+    def request(self,retry_ai=False,refresh_facts=False):
+        if type(retry_ai) is not bool or type(refresh_facts) is not bool:raise ValueError('请求参数无效')
         date=self.target()
         if date is None:raise ValueError('尚无可生成的收盘日，请等待交易日历或 16:10 时点')
         with self.lock():
@@ -120,7 +120,10 @@ class DailyStore:
             if now-state.get('manual_at',0)<60:raise BlockingIOError('请稍后重试')
             state['manual_at']=now
             row=state['days'].setdefault(date,self.new_day())
-            if row.get('phase')=='ready' and retry_ai:
+            if row.get('phase')=='ready' and refresh_facts:
+                row.update(phase='waiting',manual=True,retry_at=0,attempts=0,
+                           message='等待重新核验行情与上一交易日精选结算')
+            elif row.get('phase')=='ready' and retry_ai:
                 row.update(phase='data_ready',manual=True,retry_ai=True,retry_at=0,message='等待重新生成 AI 解读')
             elif row.get('phase') not in ['ready','ai_pending']:
                 row.update(manual=True,retry_at=0,attempts=0)

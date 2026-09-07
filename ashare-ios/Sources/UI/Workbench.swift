@@ -47,7 +47,7 @@ struct Workbench:View {
                             Section {
                                 VStack(alignment:.leading,spacing:14) {
                                     HStack { Label("盘后研究",systemImage:"sun.horizon").font(.caption);Spacer();Text(dateText(report.asOf)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                                    HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:report.isMomentum60 ? "符合条件":"转强确认",value:report.confirmedCount.formatted());Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
+                                    HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:report.conditionLabel ? "符合条件":"转强确认",value:report.confirmedCount.formatted());Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
                                     Picker("策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
                                         ForEach(AfterCloseStrategies.ids,id:\.self) { Text(AfterCloseStrategies.shortName($0)).tag($0) }
                                     }.pickerStyle(.segmented).disabled(store.busy)
@@ -61,6 +61,13 @@ struct Workbench:View {
                                                 ForEach(Momentum60Guide.rules,id:\.self) { Text($0).font(.caption).foregroundStyle(.secondary).lineSpacing(4) }
                                             }.padding(.top,8)
                                         }.font(.subheadline).tint(MobileTheme.teal)
+                                    } else if report.isLeft {
+                                        DisclosureGroup("左侧低吸策略说明") {
+                                            VStack(alignment:.leading,spacing:12) {
+                                                Text(LeftReboundGuide.summary).font(.subheadline)
+                                                ForEach(LeftReboundGuide.rules,id:\.self) { Text($0).font(.caption).foregroundStyle(.secondary).lineSpacing(4) }
+                                            }.padding(.top,8)
+                                        }.font(.subheadline).tint(MobileTheme.teal)
                                     } else if report.isGoldenPit {
                                         DisclosureGroup("黄金坑策略说明") {
                                             VStack(alignment:.leading,spacing:12) {
@@ -72,7 +79,7 @@ struct Workbench:View {
                                 }.padding(.vertical,4)
                             }
                             Section {
-                                Picker("筛选",selection:$filter) { ForEach(["精选","转强","等待","全部"],id:\.self) { Text($0=="转强" && report.isMomentum60 ? "符合":$0).tag($0) } }.pickerStyle(.segmented)
+                                Picker("筛选",selection:$filter) { ForEach(["精选","转强","等待","全部"],id:\.self) { Text($0=="转强" && report.conditionLabel ? "符合":$0).tag($0) } }.pickerStyle(.segmented)
                             }.listRowSeparator(.hidden)
                         }
                         Section {

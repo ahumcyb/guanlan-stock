@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from engine.close_proof import valid_date, verify_package_close, ZONE
 from engine.snapshot_protocol import REVISION
-from .artifacts import STRATEGIES, GENERATION, MAX_REPORT, checked_file
+from .artifacts import STRATEGIES, HISTORICAL_STRATEGIES, GENERATION, MAX_REPORT, checked_file
 
 
 def evidence_hash(value):
@@ -41,7 +41,8 @@ def collect_evidence(root, market_current, date, now):
     frames=verify_package_close(market,date,receipt.get('close_attestation'),datetime.fromtimestamp(now,ZONE))
     quotes=frames['daily'].set_index('ts_code')
     daily_codes=set(frames['daily'].ts_code);universe=None;strategies=[];breadth=None;metadata_warning=False
-    for strategy in STRATEGIES:
+    ids=STRATEGIES if (research/'left_rebound/manifest.json').exists() else HISTORICAL_STRATEGIES
+    for strategy in ids:
         folder=research/strategy
         manifest=json.loads(checked_file(research,folder/'manifest.json',65536).read_text())
         raw=checked_file(research,folder/'report.json',MAX_REPORT).read_bytes()
@@ -82,10 +83,11 @@ def collect_evidence(root, market_current, date, now):
         for name in ['confirmed_count','watching_count']:
             if type(report.get(name)) is not int or not 0<=report[name]<=10000:raise ValueError('复盘策略计数无效')
         if report['confirmed_count']<len(picks):raise ValueError('复盘确认数量不足')
+        threshold=report.get('market_filter_threshold',None if strategy=='momentum_60' else .4)
         strategies.append(dict(id=strategy,name=short_text(report.get('strategy_name'),40),
             shortlist_count=len(picks),confirmed_count=report['confirmed_count'],watching_count=report['watching_count'],picks=picks,
-            market_filter_applies=strategy!='momentum_60',
-            market_filter_passed=(report.get('breadth',0)>=.4) if strategy!='momentum_60' else None))
+            market_filter_applies=threshold is not None,market_filter_threshold=threshold,
+            market_filter_passed=(report.get('breadth',0)>=threshold) if threshold is not None else None))
         if strategy=='leaders':breadth=report.get('breadth')
         del report,stocks,raw
     if not finite(breadth) or not 0<=breadth<=1:raise ValueError('市场宽度无效')
@@ -117,9 +119,15 @@ def collect_evidence(root, market_current, date, now):
         warnings.append('股票名称与行业资料更新未完成，本期不做行业排序；候选名称沿用缓存资料。')
     if market_stats['limits_unclassified']:
         warnings.append('涨跌停仅按有效限制价统计，未设限或缺失限制价的股票不纳入。')
+    from .selection_snapshots import save_snapshot
+    from .daily_performance import collect_previous_performance
+    try:save_snapshot(root,date,generation,revision,strategies,receipt.get('published_at'))
+    except (OSError,ValueError,KeyError,TypeError):
+        warnings.append('本日精选快照未能冻结，后续结算须等待可验证的历史版本。')
+    performance=collect_previous_performance(root,market,date,frames)
     return dict(date=date,generation=generation,data_revision=revision,
         fetched_at=receipt['close_attestation']['fetched_at'],
         universe_label='沪深 A 股个股日线，含 ST；不含 ETF、北交所和指数',
         market=market_stats,sectors_strong=sorted(sectors,key=lambda x:(-x['mean_change'],x['name']))[:5],
         sectors_weak=sorted(sectors,key=lambda x:(x['mean_change'],x['name']))[:5],
-        strategies=strategies,warnings=warnings)
+        strategies=strategies,performance=performance,warnings=warnings)
