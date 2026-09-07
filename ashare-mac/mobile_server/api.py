@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
 from .queue import JobQueue,canonical_uuid
 from .realtime import RealtimeStore
+from .daily import DailyStore
+from engine.close_proof import valid_date
 
 
 class Failure(Exception):
@@ -28,6 +30,7 @@ class Service:
         self.root=root.resolve();self.token=token;self.jobs=self.root/'jobs';self.jobs.mkdir(parents=True,exist_ok=True)
         self.worker_token=worker_token;self.queue=JobQueue(self.jobs)
         self.realtime=RealtimeStore(self.root)
+        self.daily=DailyStore(self.root)
 
     def state(self):
         return self.queue.public()
@@ -64,6 +67,21 @@ class Service:
         parsed=urlsplit(target)
         if parsed.query or '%' in parsed.path or '..' in parsed.path:raise Failure(400,'INVALID_PATH','请求路径无效')
         parts=parsed.path.strip('/').split('/')
+        if parts[:2]==['v1','daily']:
+            if method=='GET' and len(parts)==2:return 200,self.daily.public()
+            if method=='GET' and len(parts)==3:
+                if not valid_date(parts[2]):raise Failure(400,'INVALID_DATE','收盘总结日期无效')
+                return 200,self.daily.report(parts[2])
+            if method=='POST' and len(parts)==3:
+                try:
+                    value=json.loads(body)
+                    if not isinstance(value,dict):raise ValueError()
+                    if parts[2]=='settings':return 200,self.daily.configure(value)
+                    if parts[2]=='generate' and set(value)<={'retry_ai'}:
+                        return 202,self.daily.request(**value)
+                except BlockingIOError:raise Failure(429,'COOLDOWN','请稍后再试，每分钟最多一次')
+                except (ValueError,TypeError,KeyError):raise Failure(400,'INVALID_BODY','请检查收盘总结设置或等待交易日历就绪')
+            raise Failure(404,'NOT_FOUND','没有找到这个收盘总结接口')
         realtime_phone = parts[:2] == ['v1','realtime']
         realtime_worker = parts[:3] == ['v1','worker','realtime']
         if realtime_phone or realtime_worker:
@@ -151,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.connection.settimeout(180)
                 status,value=self.server.service.upload(self.path,self.headers.get('Authorization',''),self.headers.get('X-Guanlan-Lease',''),self.rfile,length)
             else:
-                body_limit=256*1024 if self.path=='/v1/worker/realtime/publish' else (4096 if self.path in ['/v1/realtime/settings','/v1/worker/realtime/settings'] else 1024)
+                body_limit=256*1024 if self.path=='/v1/worker/realtime/publish' else (4096 if self.path in ['/v1/realtime/settings','/v1/worker/realtime/settings','/v1/daily/settings'] else 1024)
                 if not 0<=length<=body_limit:raise Failure(413,'TOO_LARGE','请求体过大')
                 body=self.rfile.read(length)
                 status,value=self.server.service.dispatch(self.command,self.path,self.headers.get('Authorization',''),body)

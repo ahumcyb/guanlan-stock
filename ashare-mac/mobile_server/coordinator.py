@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 from engine.snapshot_protocol import sha256_file
 from .artifacts import atomic_json
-from .queue import JobQueue
+from .queue import JobQueue,PERSISTENT_FIELDS,closing_arguments
 from .ingest import activate
 
 
@@ -22,7 +22,7 @@ def fail(queue,job,message):
     with queue.locked():
         state=queue.state()
         if queue.owns(state,job['id'],job['lease']):
-            state={k:v for k,v in state.items() if k in {'id','request_id','action','created_at','executor'}}
+            state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS|{'executor'}}
             state.update(status='failed',message=message);queue.save(state)
 
 
@@ -77,7 +77,7 @@ def serve(root,market):
                 if job:
                     work=root/'work'/str(uuid.uuid4());work.mkdir(mode=0o700)
                     process=subprocess.Popen([sys.executable,'-u','-m','mobile_server.build','--data-root',str(market/'current'),
-                        '--overlay',str(root/'overlay'),'--work',str(work),'--action',job['action']],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+                        '--overlay',str(root/'overlay'),'--work',str(work),'--action',job['action'],*closing_arguments(job)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
                     os.set_blocking(process.stdout.fileno(),False);selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
                     deadline=time.monotonic()+1800;last_renew=time.monotonic();buffer=b''
                     print('Mac 离线，服务器接管任务',flush=True)

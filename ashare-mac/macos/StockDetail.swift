@@ -31,12 +31,20 @@ struct StockDetail: View {
                 else { StockChart(candles:store.candles).id(stock.id) }
                 Divider()
                 HStack {
-                    Text("条件匹配").font(.system(size:13,weight:.semibold))
+                    Text(store.report?.isMomentum60==true ? "动量条件与排序":"条件匹配").font(.system(size:13,weight:.semibold))
                     Spacer()
                     Text("\(decimal(stock.score,digits:1)) / 100").font(.system(size:13,weight:.medium,design:.rounded)).foregroundStyle(Palette.teal)
                 }
                 VStack(spacing:9) {
-                    if store.report?.isGoldenPit==true {
+                    if store.report?.isMomentum60==true {
+                        condition("中期趋势",detail:"收盘高于 MA60",ok:stock.trendOk)
+                        condition("六十日收益",detail:percent(stock.ret60),ok:stock.strengthOk)
+                        condition("成交活跃",detail:"20 日均额前 40%",ok:stock.volumeOk)
+                        condition("波动完整",detail:"60 日日波动 \(percent(stock.vol60))",ok:stock.pullbackOk)
+                        condition("当日克制",detail:"当日涨幅 ≤5%",ok:stock.turnOk)
+                        Text("原始动量比值 \(decimal(stock.momentumRatio)) · 分数为候选内排名，不是胜率")
+                            .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
+                    } else if store.report?.isGoldenPit==true {
                         condition("长期趋势",detail:"MA60 五日变化 \(percent(stock.ma60Slope))",ok:stock.trendOk)
                         condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",ok:stock.strengthOk)
                         condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",ok:stock.pullbackOk)
@@ -64,7 +72,7 @@ struct StockDetail: View {
                 Divider()
                 Text("下一交易日的观察计划").font(.system(size:13,weight:.semibold))
                 VStack(spacing:11) {
-                    priceRow("回踩参考",value:stock.support,note:"MA20 附近")
+                    priceRow(store.report?.isMomentum60==true ? "趋势参考":"回踩参考",value:stock.support,note:store.report?.isMomentum60==true ? "MA60 附近":"MA20 附近")
                     priceRow(store.report?.isGoldenPit==true ? "坑口压力":"突破观察",value:stock.breakout,note:store.report?.isGoldenPit==true ? "回撤前高点":"信号日最高价")
                     priceRow("失效参考",value:stock.invalidation,note:store.report?.isGoldenPit==true ? "坑底下方 1% / 1.5 ATR 较高者":"近五日低点 / 1.5 ATR")
                 }

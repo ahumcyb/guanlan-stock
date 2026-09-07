@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from .queue import canonical_uuid
+from .queue import canonical_uuid,closing_arguments
 
 
 class LostLease(Exception):pass
@@ -37,7 +37,7 @@ class WorkerClient:
                 with upload.open('rb') as body:connection.request('PUT',path,body=body,headers=headers)
             else:
                 headers['Content-Type']='application/json';connection.request(method,path,None if method=='GET' else json.dumps(value or {}).encode(),headers)
-            limit=2*1024*1024 if path.startswith(('/v1/worker/realtime/','/v1/realtime')) else 65536
+            limit=2*1024*1024 if path.startswith(('/v1/worker/realtime/','/v1/realtime')) else (128*1024 if path.startswith('/v1/daily') else 65536)
             response=connection.getresponse();body=response.read(limit+1)
             if response.status==409:raise LostLease()
             if response.status not in (200,202) or len(body)>limit:raise ValueError('Worker request failed')
@@ -70,7 +70,7 @@ def run_job(client,config,job):
     try:
         print('Mac 已接管手机任务：'+job['action'],flush=True)
         execute(['engine.remote','--config',config['ssh_config'],'--cache',root/'market'])
-        execute(['mobile_server.build','--data-root',root/'market/current','--overlay',root/'overlay','--work',work,'--action',job['action']])
+        execute(['mobile_server.build','--data-root',root/'market/current','--overlay',root/'overlay','--work',work,'--action',job['action'],*closing_arguments(job)])
         if lost.is_set():raise LostLease()
         client.request('/v1/worker/uploads/'+job['id'],upload=work/'bundle.zip',lease=job['lease'])
         print('Mac 结果已上传，服务器正在校验发布',flush=True)

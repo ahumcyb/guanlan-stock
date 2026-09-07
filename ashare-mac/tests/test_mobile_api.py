@@ -73,7 +73,7 @@ class MobileAPITests(unittest.TestCase):
 
     def outputs(self):
         outputs=self.root/'outputs'
-        for strategy in ['leaders','pullback','golden_pit']:
+        for strategy in ['leaders','pullback','golden_pit','momentum_60']:
             folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True)
             report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[{'ts_code':'000001.SZ'}],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
             atomic_json(folder/'report.json',report);atomic_json(folder/'charts/000001.SZ.json',[{'date':'20260904'}])
@@ -110,9 +110,18 @@ class MobileAPITests(unittest.TestCase):
         with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
         self.assertEqual(current_manifest(self.root,'golden_pit'),first['golden_pit'])
 
-    def test_old_release_remains_readable_before_third_strategy_is_published(self):
+    def test_momentum_is_served_and_bad_fourth_chart_preserves_current(self):
+        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        manifest=self.call('GET','/v1/reports/momentum_60/current')[1]
+        self.assertEqual(manifest['generation'],first['leaders']['generation'])
+        (outputs/'momentum_60/20260905T120000-abcdef/charts/000001.SZ.json').write_text('[]')
+        with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        self.assertEqual(current_manifest(self.root,'momentum_60'),first['momentum_60'])
+
+    def test_old_release_remains_readable_before_fourth_strategy_is_published(self):
         publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')
         import shutil
-        shutil.rmtree(self.root/'current/golden_pit')
+        shutil.rmtree(self.root/'current/momentum_60')
         status=self.call('GET','/v1/status')[1]
-        self.assertEqual(set(status['reports']),{'leaders','pullback'})
+        self.assertEqual(set(status['reports']),{'leaders','pullback','golden_pit'})
+        self.assertEqual(self.call('GET','/v1/reports/leaders/current')[0],200)

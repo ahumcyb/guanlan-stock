@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from engine.snapshot_protocol import REVISION
 
-STRATEGIES=('leaders','pullback','golden_pit')
+STRATEGIES=('leaders','pullback','golden_pit','momentum_60')
 GENERATION=re.compile(r'^\d{8}T\d{6}-[a-f0-9]{6}$')
 CODE=re.compile(r'^\d{6}\.(SH|SZ|BJ)$')
 MAX_REPORT=12*1024*1024

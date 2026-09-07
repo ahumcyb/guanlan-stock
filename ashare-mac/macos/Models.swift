@@ -1,5 +1,12 @@
 import Foundation
 
+enum AfterCloseStrategies {
+    static let ids = ["leaders", "pullback", "golden_pit", "momentum_60"]
+    static func shortName(_ id:String)->String {
+        ["leaders":"流动性趋势", "pullback":"缩量回踩", "golden_pit":"黄金坑", "momentum_60":"60 日动量"][id] ?? id
+    }
+}
+
 func sameDataDirectory(_ lhs:String,_ rhs:String)->Bool {
     // URL equality distinguishes trailing directory slashes after symlink resolution.
     URL(fileURLWithPath:lhs).standardizedFileURL.resolvingSymlinksInPath().path
@@ -36,6 +43,7 @@ struct Stock: Decodable, Identifiable, Hashable {
     let pitDepth: Double?; let pitAge: Double?; let pitFallDays: Double?; let pitRebound: Double?
     let pitContraction: Double?; let pitRecoveryVolume: Double?; let pitPeak: Double?; let pitLow: Double?
     let ma60Slope: Double?; let ret60: Double?
+    let vol60: Double?; let momentumRatio: Double?
     var id: String { tsCode }
     var symbol: String { String(tsCode.prefix(6)) }
 }
@@ -59,6 +67,12 @@ struct MonthStats: Decodable, Identifiable {
     let month: String; let count: Int; let total: Int; let mean: Double?; let winRate: Double?
     let statuses: [String:Int]
     var id: String { month }
+    var displayMonth:String { String(month.prefix(4))+"-"+String(month.suffix(2)) }
+    var sampleLabel:String {
+        if total==0 { return "无信号" }
+        if count==0 { return (statuses["pending",default:0]+statuses["censored",default:0])>0 ? "待观察结束":"无可结算样本" }
+        return "已结算 \(count) 次"
+    }
 }
 struct Study: Decodable {
     let start: String; let end: String; let horizons: [Horizon]; let monthly: [MonthStats]
@@ -76,6 +90,21 @@ struct Report: Decodable {
     let dataRevision:String?
     var isLeaders:Bool { strategyId=="leaders" }
     var isGoldenPit:Bool { strategyId=="golden_pit" }
+    var isMomentum60:Bool { strategyId=="momentum_60" }
+}
+
+enum Momentum60Guide {
+    static let summary = "在成交活跃的沪深主板中，寻找价格站上 MA60、近 60 日上涨且涨幅相对波动较高的股票。按 60 日收益 / 60 日波动排序，精选最多 5 只。"
+    static let evidence = "2026 年 1–4 月选择期：合并平仓胜率 48.69%，三个独立 10 万元账户平均收益 +1.99%。这是本轮八个新候选中的最高选择期胜率；开发期平均收益 -6.34%，尚未通过完整验证。"
+    static let rules = [
+        "基础池：沪深主板，当前非 ST / 退市名称；至少 80 根日线、最近 60 个市场日连续；价格 ≥3 元、20 日均成交额 ≥1 亿元、ATR / 价格 ≤6%。信号日必须有复权因子和有效涨跌停价。",
+        "流动性：在主板基础池内，取 20 日均成交额前 40%。相同成交额按股票代码排序。",
+        "趋势与涨幅：收盘价高于 MA60，近 60 个交易日连续价格收益为正，当日涨幅不超过 5%。本规则没有增加 MA20、行业限额或市场宽度择时条件。满足其他条件但当日涨幅超过 5% 时列入“等待”，符合全部条件的列入“符合”。",
+        "排序：60 日收益除以近 60 日每日收益的样本标准差，取前 5；同值按代码排序。首页展示的 0–100 排序分是候选内相对排名，不是胜率，精选按未取整的原始比值确定。",
+        "观察计划：D 日收盘形成信号，次日开盘才可进入；高开超过 3%、涨停、停牌或交易数据不足时保留现金，不用后排股票补位。默认研究持有 3 日，MA60 是趋势参考；图示失效价并未加入盘中止损回测。",
+        "封存研究按 10 万元、5 个仓位、100 股整手、最低佣金和税费及双边各 10 bp 滑点计算；3 个起始日期各使用独立账户。开发期为 2025 年 5–12 月，合并平仓胜率 44.27%、账户平均收益 -6.34%；选择期为 2026 年 1–4 月，三个账户合计 306 笔平仓、胜率 48.69%、账户平均收益 +1.99%。",
+        "这项策略尚未完成独立留出和模拟实盘盈利验证。App 的动态历史页面另按当前名称过滤、逐事件统计，存在回溯偏差与信号重叠，不能与上述资金账本结果混用；历史胜率不代表未来概率。"
+    ]
 }
 
 enum GoldenPitGuide {

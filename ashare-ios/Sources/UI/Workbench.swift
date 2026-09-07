@@ -13,7 +13,7 @@ struct Workbench:View {
         else {
             switch filter {
             case "精选":rows=rows.filter{$0.state=="入选"}
-            case "转强":rows=rows.filter{["入选","转强"].contains($0.state)}
+            case "转强":rows=rows.filter{["入选","转强","符合"].contains($0.state)}
             case "等待":rows=rows.filter{$0.state=="等待"}
             default:break
             }
@@ -32,14 +32,36 @@ struct Workbench:View {
                     List {
                         if !favoritesOnly {
                             Section {
+                                Button { store.openDailySummary() } label: {
+                                    HStack(spacing:12) {
+                                        Image(systemName:"sun.horizon").foregroundStyle(MobileTheme.teal)
+                                        VStack(alignment:.leading,spacing:5) {
+                                            Text("每日收盘总结").font(.subheadline.weight(.semibold))
+                                            Text(store.daily?.latest.map { dateText($0.date)+" · "+$0.analysis.headline } ?? "16:10 起核验行情，自动生成复盘")
+                                                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                        Spacer();Image(systemName:"chevron.right").font(.caption).foregroundStyle(.secondary)
+                                    }.padding(.vertical,5)
+                                }.buttonStyle(.plain)
+                            }
+                            Section {
                                 VStack(alignment:.leading,spacing:14) {
                                     HStack { Label("盘后研究",systemImage:"sun.horizon").font(.caption);Spacer();Text(dateText(report.asOf)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                                    HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:"转强确认",value:report.confirmedCount.formatted());Metric(label:"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
+                                    HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:report.isMomentum60 ? "符合条件":"转强确认",value:report.confirmedCount.formatted());Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
                                     Picker("策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
-                                        Text("流动性趋势").tag("leaders");Text("缩量回踩").tag("pullback");Text("黄金坑").tag("golden_pit")
+                                        ForEach(AfterCloseStrategies.ids,id:\.self) { Text(AfterCloseStrategies.shortName($0)).tag($0) }
                                     }.pickerStyle(.segmented).disabled(store.busy)
                                     HStack { Text("持有研究 1–5 日");Spacer();Text(report.regime) }.font(.caption).foregroundStyle(.secondary)
-                                    if report.isGoldenPit {
+                                    if report.isMomentum60 {
+                                        Text("市场宽度仅作环境参考，不参与本策略筛选。").font(.caption).foregroundStyle(.secondary)
+                                        Text(Momentum60Guide.evidence).font(.caption).foregroundStyle(MobileTheme.amber).lineSpacing(3)
+                                        DisclosureGroup("60 日风险调整动量说明") {
+                                            VStack(alignment:.leading,spacing:12) {
+                                                Text(Momentum60Guide.summary).font(.subheadline)
+                                                ForEach(Momentum60Guide.rules,id:\.self) { Text($0).font(.caption).foregroundStyle(.secondary).lineSpacing(4) }
+                                            }.padding(.top,8)
+                                        }.font(.subheadline).tint(MobileTheme.teal)
+                                    } else if report.isGoldenPit {
                                         DisclosureGroup("黄金坑策略说明") {
                                             VStack(alignment:.leading,spacing:12) {
                                                 Text(GoldenPitGuide.summary).font(.subheadline)
@@ -50,7 +72,7 @@ struct Workbench:View {
                                 }.padding(.vertical,4)
                             }
                             Section {
-                                Picker("筛选",selection:$filter) { ForEach(["精选","转强","等待","全部"],id:\.self) { Text($0) } }.pickerStyle(.segmented)
+                                Picker("筛选",selection:$filter) { ForEach(["精选","转强","等待","全部"],id:\.self) { Text($0=="转强" && report.isMomentum60 ? "符合":$0).tag($0) } }.pickerStyle(.segmented)
                             }.listRowSeparator(.hidden)
                         }
                         Section {
@@ -59,13 +81,13 @@ struct Workbench:View {
                                     .swipeActions { Button { store.toggleFavorite(stock) } label: { Label(store.favorites.contains(stock.id) ? "移出观察":"加入观察",systemImage:"star") }.tint(MobileTheme.teal) }
                             }
                             if stocks.isEmpty { EmptyMessage(title:favoritesOnly ? "建立你的观察列表":"没有符合条件的股票",text:favoritesOnly ? "在股票详情点星标，或向左轻扫股票加入观察。":"可以切换筛选条件或搜索名称、代码和行业。",icon:"magnifyingglass").listRowSeparator(.hidden) }
-                        } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? "设备内保存":"每行业最多 2 只精选") } }
+                        } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? "设备内保存":(report.isMomentum60 ? "动量比值排序 · 最多 5 只":"每行业最多 2 只精选")) } }
                         Section { Text("研究规则尚未证明稳定优势；匹配分不代表胜率。").font(.caption).foregroundStyle(.secondary) }.listRowSeparator(.hidden)
                     }.listStyle(.plain).refreshable { await store.synchronize() }
                 } else {
                     VStack(spacing:16) {
                         Picker("策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
-                            Text("流动性趋势").tag("leaders");Text("缩量回踩").tag("pullback");Text("黄金坑").tag("golden_pit")
+                            ForEach(AfterCloseStrategies.ids,id:\.self) { Text(AfterCloseStrategies.shortName($0)).tag($0) }
                         }.pickerStyle(.segmented).disabled(store.busy).padding(.horizontal,16)
                         EmptyMessage(title:store.busy ? "正在同步你的工作台":"暂未下载这套策略",text:store.busy ? store.message:"可切换其他策略，或到“数据”页同步最新结果。首次使用需导入连接配置。")
                     }

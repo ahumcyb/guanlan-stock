@@ -71,3 +71,22 @@ class LeaseTests(unittest.TestCase):
         self.assertIsNone(self.queue.claim('server'))
         self.now+=1201
         server=self.queue.claim('server');self.assertEqual(server['executor'],'server')
+
+    def test_closing_date_survives_reclaim_and_failure(self):
+        old=self.queue.claim('mac');self.queue.failed(old['id'],old['lease']);self.now+=301
+        self.queue.submit('refresh',str(uuid.uuid4()),expected_as_of='20260904')
+        mac=self.queue.claim('mac');self.assertEqual(mac['expected_as_of'],'20260904')
+        self.now+=91;server=self.queue.claim('server')
+        self.assertEqual(server['purpose'],'daily_review')
+        self.assertEqual(server['expected_as_of'],'20260904')
+        self.queue.failed(server['id'],server['lease'])
+        self.assertEqual(self.queue.state()['expected_as_of'],'20260904')
+
+    def test_closing_submission_does_not_override_a_manual_job(self):
+        result=self.queue.submit('refresh',str(uuid.uuid4()),expected_as_of='20260904')
+        self.assertEqual(result['id'],self.job['id'])
+        self.assertNotIn('expected_as_of',self.queue.state())
+
+    def test_bad_closing_dates_and_non_refresh_actions_are_rejected(self):
+        for action,date in [('recompute','20260904'),('refresh','20260230'),('refresh','../../x')]:
+            with self.assertRaises(ValueError):self.queue.submit(action,str(uuid.uuid4()),expected_as_of=date)

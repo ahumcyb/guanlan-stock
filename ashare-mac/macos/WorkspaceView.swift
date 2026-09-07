@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkspaceView:View {
     @EnvironmentObject var store:AppStore
     var favoritesOnly=false
+    var onDaily:(()->Void)?=nil
     @State private var query=""
     @State private var filter="精选"
     @State private var order="匹配分"
@@ -12,7 +13,7 @@ struct WorkspaceView:View {
             let matches=text.isEmpty || [stock.name,stock.tsCode,stock.industry].contains(where:{$0.localizedCaseInsensitiveContains(text)})
             let included = favoritesOnly ? store.favorites.contains(stock.id) :
                 (!text.isEmpty || filter=="全部" || (filter=="精选" && stock.state=="入选") ||
-                 (filter=="转强" && ["入选","转强"].contains(stock.state)) || (filter=="等待" && stock.state=="等待"))
+                 (filter=="转强" && ["入选","转强","符合"].contains(stock.state)) || (filter=="等待" && stock.state=="等待"))
             return matches && included
         }
         rows.sort { a,b in
@@ -59,16 +60,22 @@ struct WorkspaceView:View {
                 Badge(text:"盘后研究")
             }
             if !favoritesOnly {
+                Button { onDaily?() } label: {
+                    HStack { Label("每日收盘总结",systemImage:"sun.horizon");Spacer();Text("16:10 自动复盘").foregroundStyle(Palette.muted);Image(systemName:"chevron.right") }
+                        .font(.system(size:11)).padding(10).background(Palette.selected,in:RoundedRectangle(cornerRadius:6))
+                }.buttonStyle(.plain)
                 Picker("筛选策略",selection:Binding(get:{store.strategy},set:{store.changeStrategy($0)})) {
-                    Text("流动性趋势").tag("leaders")
-                    Text("缩量回踩转强").tag("pullback"); Text("黄金坑").tag("golden_pit")
+                    ForEach(AfterCloseStrategies.ids,id:\.self) { Text(AfterCloseStrategies.shortName($0)).tag($0) }
                 }.pickerStyle(.segmented).font(.system(size:11)).disabled(store.busy)
             }
             if let report=store.report {
                 HStack(spacing:15) {
                     Metric(label:"有效股票池",value:report.eligibleCount.formatted(),note:"\(report.universeCount.formatted()) 只当日行情")
-                    Metric(label:"转强确认",value:String(report.confirmedCount),note:"精选最多 10 只")
-                    Metric(label:"市场宽度",value:percent(report.breadth),note:"MA20 上方占比 · \(report.regime)",color:Palette.teal)
+                    Metric(label:report.isMomentum60 ? "符合条件":"转强确认",value:String(report.confirmedCount),note:report.isMomentum60 ? "精选最多 5 只":"精选最多 10 只")
+                    Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),note:report.isMomentum60 ? "MA20 上方占比 · 不参与筛选":"MA20 上方占比 · \(report.regime)",color:Palette.teal)
+                }
+                if report.isMomentum60 {
+                    Text(Momentum60Guide.evidence).font(.system(size:10)).foregroundStyle(Palette.amber).lineSpacing(3)
                 }
                 if report.staleSessions>0 || report.missingAdjustmentToday>0 || report.missingLimitsToday>0 {
                     HStack(alignment:.top,spacing:7) {
@@ -98,14 +105,14 @@ struct WorkspaceView:View {
             if !favoritesOnly {
                 HStack(spacing:4) {
                     ForEach(["精选","转强","等待","全部"],id:\.self) { item in
-                        Button(item) { filter=item; query="" }
+                        Button(item=="转强" && store.report?.isMomentum60==true ? "符合":item) { filter=item; query="" }
                             .buttonStyle(.plain).font(.system(size:11,weight:filter==item ? .semibold:.regular))
                             .padding(.horizontal,14).padding(.vertical,7)
                             .foregroundStyle(filter==item ? Palette.teal:Palette.muted)
                             .background(filter==item ? Palette.selected:Color.clear,in:RoundedRectangle(cornerRadius:5))
                     }
                     Spacer()
-                    Text(query.isEmpty ? "同一行业最多 2 只精选":"搜索范围：全部股票").font(.system(size:9)).foregroundStyle(Palette.muted)
+                    Text(query.isEmpty ? (store.report?.isMomentum60==true ? "原始动量比值排序 · 最多 5 只":"同一行业最多 2 只精选"):"搜索范围：全部股票").font(.system(size:9)).foregroundStyle(Palette.muted)
                 }
             }
         }.padding(.horizontal,24).padding(.bottom,16)

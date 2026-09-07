@@ -36,7 +36,7 @@ class IngestTests(unittest.TestCase):
         metadata={'schema_version':1,'input_revision':manifest['revision'],'data_revision':manifest['revision'],'generation':'20260905T120000-abcdef'}
         entries['market/manifest.json']=json.dumps(manifest).encode()
         entries['bundle.json']=json.dumps(metadata).encode()
-        for strategy in ['leaders','pullback','golden_pit']:
+        for strategy in ['leaders','pullback','golden_pit','momentum_60']:
             report=json.dumps({'schema_version':1,'strategy_id':strategy,'as_of':'20260904',
                 'data_revision':manifest['revision'],'stocks':[{'ts_code':'000001.SZ'}]}).encode()
             entries[f'research/{strategy}/report.json']=report
@@ -58,6 +58,30 @@ class IngestTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive,'a') as output:output.writestr('research/charts/999999.SH.json','[]')
         rejected=self.root/'rejected';rejected.mkdir()
         with self.assertRaises(ValueError):extract(self.archive,rejected)
+
+    def test_missing_fourth_report_cannot_replace_current(self):
+        self.bundle()
+        with zipfile.ZipFile(self.archive) as original:
+            members={n:original.read(n) for n in original.namelist() if not n.startswith('research/momentum_60/')}
+        with zipfile.ZipFile(self.archive,'w') as output:
+            for name,data in members.items():output.writestr(name,data)
+        data=self.archive.read_bytes()
+        self.queue.uploaded(self.job['id'],self.job['lease'],hashlib.sha256(data).hexdigest(),len(data))
+        previous=self.root/'current';previous.mkdir();(previous/'keep').write_text('previous generation')
+        with patch('mobile_server.ingest.publish_market') as publisher:
+            with self.assertRaises(ValueError):activate(self.archive,self.root,self.root/'market',self.queue,self.job)
+            publisher.assert_not_called()
+        self.assertEqual((previous/'keep').read_text(),'previous generation')
+
+    def test_closing_job_rejects_an_ordinary_bundle_even_on_the_same_date(self):
+        self.queue.failed(self.job['id'],self.job['lease'])
+        self.queue.clock=lambda:1400
+        self.queue.submit('refresh',str(uuid.uuid4()),expected_as_of='20260904')
+        self.job=self.queue.claim('mac');self.ready()
+        with patch('mobile_server.ingest.publish_market') as publisher:
+            with self.assertRaisesRegex(ValueError,'Closing job target'):
+                activate(self.archive,self.root,self.root/'market',self.queue,self.job)
+            publisher.assert_not_called()
 
     def test_archive_rejects_traversal_duplicates_and_symlinks(self):
         for kind in ['traversal','duplicate','symlink']:

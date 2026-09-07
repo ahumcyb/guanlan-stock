@@ -130,10 +130,13 @@ def main(args):
     else:
         cache = args.cache;cache.mkdir(parents=True, exist_ok=True, mode=0o700)
         store = RealtimeStore(args.root);stop = threading.Event()
+        from .daily import DailyStore
+        daily=DailyStore(args.root)
         def service_pulse():
             while not stop.wait(5):
                 try:
                     store.pulse('server')
+                    daily.pulse()
                 except Exception:
                     pass
         threading.Thread(target=service_pulse, daemon=True).start()
@@ -157,6 +160,10 @@ def main(args):
                 if job:
                     run_job(job, store.renew, store.publish, store.fail, args.market_root, cache)
                 enrich_latest(store)
+                try:
+                    daily.tick(args.market_root)
+                except Exception:
+                    print('收盘总结暂未完成，已保留有效记录，稍后继续',flush=True)
                 time.sleep(3)
         finally:
             stop.set()

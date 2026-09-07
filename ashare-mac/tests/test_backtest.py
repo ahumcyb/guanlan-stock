@@ -1,5 +1,5 @@
 import unittest
-from engine.backtest import evaluate_event
+from engine.backtest import evaluate_event, monthly_results
 
 
 class BacktestTests(unittest.TestCase):
@@ -67,3 +67,16 @@ class BacktestTests(unittest.TestCase):
         self.dates=self.dates[:5]
         self.quotes[self.dates[4],'000001.SZ']['open']=9.
         self.assertEqual(self.run_event()['status'],'censored')
+
+    def test_month_without_three_day_signals_remains_visible_without_fake_return(self):
+        dates=['20260430','20260529','20260601','20260630','20260701']
+        events=[dict(signal_date='20260529',horizon=3,status='settled',net_return=.01,stress_return=.007),
+                dict(signal_date='20260601',horizon=1,status='settled',net_return=.02,stress_return=.017),
+                dict(signal_date='20260701',horizon=3,status='pending')]
+        rows=monthly_results(events,dates,'20260501')
+        self.assertEqual([r['month'] for r in rows],['202605','202606','202607'])
+        june=rows[1]
+        self.assertEqual((june['count'],june['total']),(0,0))
+        self.assertIsNone(june['mean']);self.assertIsNone(june['win_rate'])
+        self.assertEqual(rows[2]['statuses'],{'pending':1})
+        self.assertEqual((rows[2]['count'],rows[2]['total']),(0,1))

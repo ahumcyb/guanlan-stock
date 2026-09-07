@@ -1,0 +1,175 @@
+import SwiftUI
+
+@MainActor final class DailyDesktopStore:ObservableObject {
+    @Published var state:DailyState?
+    @Published var detail:DailyReport?
+    @Published var busy=false
+    @Published var message="连接收盘总结服务…"
+    let cache:DailyCache
+    init() {
+        let base=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first!
+        cache=DailyCache(root:base.appendingPathComponent("GuanlanDaily"))
+        state=try? cache.loadState()
+    }
+    @discardableResult func request(_ action:String,runtime:Runtime,values:[String:Any]=[:]) async -> Bool {
+        guard !busy else { return false };busy=true;defer { busy=false }
+        if action=="report",let date=values["date"] as? String { detail=try? cache.loadReport(date) }
+        do {
+            let input=try JSONSerialization.data(withJSONObject:values)
+            let data=try await Task.detached(priority:.utility) {
+                let process=Process();let output=Pipe();let source=Pipe()
+                process.executableURL=URL(fileURLWithPath:runtime.python)
+                process.currentDirectoryURL=URL(fileURLWithPath:runtime.projectRoot)
+                process.arguments=["-m","mobile_server.daily_control","--config",runtime.projectRoot+"/settings/mobile-viewer.json",action]
+                process.standardOutput=output;process.standardError=FileHandle.nullDevice;process.standardInput=source
+                try process.run();source.fileHandleForWriting.write(input);try source.fileHandleForWriting.close()
+                let result=output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
+                guard process.terminationStatus==0,result.count<=128*1024 else { throw CocoaError(.fileReadUnknown) }
+                return result
+            }.value
+            if action=="state" {
+                state=try cache.saveState(data);message=state?.status.message ?? "已同步"
+                if detail?.date==state?.latest?.date { detail=state?.latest }
+            }
+            else if action=="report" { detail=try cache.saveReport(data);message="已载入该交易日总结" }
+            else { message=action=="settings" ? "设置已保存":"已提交，请等待收盘行情核验和分析" }
+            return true
+        } catch { message="收盘服务暂未连接；已有缓存仍可阅读，请稍后重试。";return false }
+    }
+}
+
+struct DailySummaryView:View {
+    @EnvironmentObject var app:AppStore
+    @StateObject private var store=DailyDesktopStore()
+    @State private var selectedDate=""
+    @State private var showSettings=false
+    @State private var enabled=false
+    @State private var notify=true
+    @State private var ai=true
+    @State private var model="deepseek-v4-flash"
+    @State private var key=""
+    private var report:DailyReport? { selectedDate.isEmpty ? store.state?.latest:(store.detail?.date==selectedDate ? store.detail:nil) }
+    var body:some View {
+        ScrollView {
+            VStack(alignment:.leading,spacing:20) {
+                HStack(alignment:.top) {
+                    pageTitle("每日收盘总结",subtitle:"交易日 16:10 起核验行情 · Mac 优先更新与选股")
+                    Spacer()
+                    Button("同步") { Task { await refresh() } }.disabled(store.busy)
+                    Button("补生成最近收盘日") { Task { await store.request("generate",runtime:app.runtime);await refresh() } }.disabled(store.busy)
+                    Button("总结设置") { loadSettings();showSettings.toggle() }.disabled(store.state==nil)
+                }
+                HStack {
+                    Badge(text:store.state?.settings.enabled==true ? "自动总结已开启":"自动总结已暂停")
+                    if store.state?.schedulerOnline==false { Badge(text:"调度暂离线",color:Palette.amber) }
+                    Text(store.message).font(.system(size:12)).foregroundStyle(Palette.muted)
+                    if store.busy { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Text("下次 \(dailyTime(store.state?.status.nextRunAt))").font(.system(size:11)).foregroundStyle(Palette.muted)
+                }
+                if showSettings { settingsPanel }
+                Picker("交易日",selection:$selectedDate) {
+                    Text("最新总结").tag("")
+                    ForEach(store.state?.history ?? []) { item in Text(dateText(item.date)).tag(item.date) }
+                }.frame(width:230).disabled(store.busy)
+                if let report {
+                    HStack {
+                        Text(report.analysis.headline).font(.system(size:23,weight:.semibold))
+                        Spacer();Badge(text:dateText(report.date))
+                        Badge(text:report.analysis.status=="ready" ? "DeepSeek 解读":(report.analysis.status=="pending" ? "分析中":"量价摘要"),color:report.analysis.status=="ready" ? Palette.teal:Palette.amber)
+                    }
+                    marketPanel(report.evidence)
+                    analysisPanel(report.analysis)
+                    HStack(alignment:.top,spacing:16) {
+                        sectorPanel("相对较强行业",rows:report.evidence.sectorsStrong)
+                        sectorPanel("相对较弱行业",rows:report.evidence.sectorsWeak)
+                    }
+                    ForEach(report.evidence.strategies) { strategy in strategyPanel(strategy) }
+                    ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.system(size:11)).foregroundStyle(Palette.amber) }
+                    Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的 ProMax 收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                } else {
+                    Panel { EmptyViewMessage(icon:"sun.horizon",title:"等待收盘后的完整总结",message:"16:10 起核验当日行情，再生成市场、行业与四套策略复盘。可以在总结设置中更换 DeepSeek Key。") }
+                }
+            }.padding(30)
+        }
+        .task {
+            await refresh()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for:.seconds(20)) } catch { return }
+                if !store.busy { await store.request("state",runtime:app.runtime) }
+            }
+        }
+        .onChange(of:selectedDate) { _,date in if !date.isEmpty { Task { await store.request("report",runtime:app.runtime,values:["date":date]) } } }
+    }
+    private func refresh() async {
+        await store.request("state",runtime:app.runtime)
+        if !selectedDate.isEmpty { await store.request("report",runtime:app.runtime,values:["date":selectedDate]) }
+    }
+    private func loadSettings() {
+        if let s=store.state?.settings { enabled=s.enabled;notify=s.notificationEnabled;ai=s.aiEnabled;model=s.model }
+    }
+    private var settingsPanel:some View {
+        Panel {
+            VStack(alignment:.leading,spacing:14) {
+                Text("自动复盘与 DeepSeek").font(.headline)
+                HStack { Toggle("收盘后自动生成",isOn:$enabled);Toggle("完成后手机提醒",isOn:$notify);Toggle("使用 DeepSeek 分析",isOn:$ai) }
+                HStack { Picker("模型",selection:$model) { Text("V4 Flash").tag("deepseek-v4-flash");Text("V4 Pro").tag("deepseek-v4-pro") }.frame(width:280);Spacer() }
+                SecureField(store.state?.settings.deepseekConfigured==true ? "已配置 · 输入新 API Key 可替换":"DeepSeek API Key",text:$key)
+                    .textFieldStyle(.roundedBorder)
+                Text("Key 和模型与实时解读共用。留空保留现有 Key；保存后用于后续分析。只发送公开量价与候选摘要，调用费用由 DeepSeek 账户承担。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                HStack {
+                    Button("保存设置") {
+                        Task {
+                            var values:[String:Any]=["enabled":enabled,"notification_enabled":notify,"ai_enabled":ai,"model":model]
+                            let secret=key.trimmingCharacters(in:.whitespacesAndNewlines)
+                            if !secret.isEmpty { values["deepseek_key"]=secret }
+                            if await store.request("settings",runtime:app.runtime,values:values) { key="";showSettings=false;await refresh() }
+                        }
+                    }.buttonStyle(.borderedProminent).disabled(store.busy)
+                    Button("重做最新总结的 AI") { Task { await store.request("generate",runtime:app.runtime,values:["retry_ai":true]);await refresh() } }.disabled(store.busy)
+                }
+            }
+        }
+    }
+    private func marketPanel(_ evidence:DailyEvidence)->some View {
+        Panel {
+            VStack(alignment:.leading,spacing:18) {
+                Text("\(evidence.market.stockCount.formatted()) 只沪深股票 · 收盘量价").font(.headline)
+                HStack { Metric(label:"上涨家数",value:evidence.market.advancers.formatted(),color:Palette.up);Metric(label:"下跌家数",value:evidence.market.decliners.formatted(),color:Palette.down);Metric(label:"成交额 / 亿元",value:decimal(evidence.market.turnoverYi)) }
+                HStack { Metric(label:"收盘涨停",value:String(evidence.market.limitUp));Metric(label:"收盘跌停",value:String(evidence.market.limitDown));Metric(label:"策略池 MA20 上方占比",value:percent(evidence.market.breadth)) }
+                Text("平盘 \(evidence.market.unchanged) 只 · 涨跌幅中位数 \(dailyChange(evidence.market.medianChange)) · \(evidence.universeLabel)").font(.system(size:11)).foregroundStyle(Palette.muted)
+            }
+        }
+    }
+    private func analysisPanel(_ analysis:DailyAnalysis)->some View {
+        Panel {
+            VStack(alignment:.leading,spacing:16) {
+                if analysis.status=="pending" { ProgressView("正在生成 DeepSeek 分析…") }
+                paragraph("市场量价",analysis.marketView)
+                paragraph("行业分化",analysis.sectorView)
+                paragraph("四策略观察",analysis.strategyView)
+                paragraph("下一交易日",analysis.watchNext)
+                ForEach(analysis.risks,id:\.self) { Text("· "+$0).font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(4) }
+            }.frame(maxWidth:.infinity,alignment:.leading)
+        }
+    }
+    @ViewBuilder private func paragraph(_ title:String,_ body:String)->some View {
+        if !body.isEmpty { VStack(alignment:.leading,spacing:7) { Text(title).font(.system(size:13,weight:.semibold));Text(body).font(.system(size:13)).lineSpacing(6).textSelection(.enabled) } }
+    }
+    private func sectorPanel(_ title:String,rows:[DailySector])->some View {
+        Panel { VStack(alignment:.leading,spacing:14) {
+            Text(title).font(.headline)
+            if rows.isEmpty { Text("行业资料暂不足").font(.caption).foregroundStyle(Palette.muted) }
+            ForEach(rows) { row in HStack { Text(row.name);Spacer();Text("\(row.members) 只").foregroundStyle(Palette.muted);Text(dailyChange(row.meanChange)).monospacedDigit().foregroundStyle(row.meanChange>=0 ? Palette.up:Palette.down) }.font(.system(size:12)) }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
+    }
+    private func strategyPanel(_ strategy:DailyStrategyFacts)->some View {
+        Panel { VStack(alignment:.leading,spacing:12) {
+            HStack { Text(strategy.name).font(.headline);Spacer();Badge(text:"\(strategy.shortlistCount) 只精选") }
+            Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.system(size:11)).foregroundStyle(Palette.muted)
+            if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 40% 门槛，暂停新候选。").font(.system(size:11)).foregroundStyle(Palette.amber) }
+            if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.system(size:12)).foregroundStyle(Palette.muted) }
+            ForEach(strategy.picks) { stock in HStack { Text(stock.name);Text(String(stock.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(decimal(stock.close));Text(dailyChange(stock.change)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down) }.font(.system(size:12)) }
+        } }
+    }
+}

@@ -16,14 +16,23 @@ import Combine
     @Published var realtimeMessage="连接服务器后查看定时策略和提醒"
     @Published var realtimeSettingsPresented=false
     @Published var realtimeNavigationRevision=0
+    @Published var daily:DailyState?
+    @Published var dailyDetail:DailyReport?
+    @Published var dailyBusy=false
+    @Published var dailyPresented=false
+    @Published var dailyRequestedDate:String?
+    @Published var dailyMessage="交易日 16:10 后自动生成收盘总结"
     private var api:MobileAPI?
     let cache:OfflineCache
+    let dailyCache:DailyCache
     private var operation:UUID?
     var report:Report? { snapshot?.report }
 
     init() {
         let base=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first!
         cache=OfflineCache(root:base.appendingPathComponent("GuanlanMobile",isDirectory:true))
+        dailyCache=DailyCache(root:base.appendingPathComponent("GuanlanDaily",isDirectory:true))
+        daily=try? dailyCache.loadState()
         do {
             if let pairing=try CredentialStore.load() { api=try MobileAPI(pairing);connected=true }
             snapshot=try cache.load(strategy)
@@ -53,7 +62,7 @@ import Combine
         catch { self.error=error.localizedDescription }
     }
     func changeStrategy(_ value:String) {
-        guard !busy,["leaders","pullback","golden_pit"].contains(value),value != strategy else { return }
+        guard !busy,AfterCloseStrategies.ids.contains(value),value != strategy else { return }
         strategy=value;UserDefaults.standard.set(value,forKey:"mobileStrategy")
         snapshot=try? cache.load(value)
         Task { await synchronize() }
@@ -101,6 +110,7 @@ import Combine
             let previous=status?.job
             await refreshStatus()
             await refreshRealtime()
+            await refreshDaily()
             if previous?.active==true,status?.job.status=="completed" { await synchronize() }
             if status?.job.status=="failed" { error=status?.job.message }
             do { try await Task.sleep(for:.seconds(status?.job.active==true ? 3:20)) }
@@ -128,10 +138,46 @@ import Combine
         } catch { realtimeMessage=error.localizedDescription }
     }
     func openURL(_ url:URL) async {
-        if url.scheme=="guanlan",url.host=="alerts" {
+        if url.scheme=="guanlan",url.host=="daily" {
+            let date=URLComponents(url:url,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name=="date"})?.value
+            guard date==nil || validDailyDate(date!) else { return }
+            realtimeSettingsPresented=false;selectedTab=0
+            dailyRequestedDate=date;dailyPresented=true;await refreshDaily()
+        } else if url.scheme=="guanlan",url.host=="alerts" {
+            dailyPresented=false
             realtimeSettingsPresented=false;realtimeNavigationRevision+=1
             selectedTab=1;await refreshRealtime()
         } else if url.isFileURL { await importConnection(url) }
+    }
+
+    func openDailySummary() { dailyRequestedDate=nil;dailyPresented=true }
+    func refreshDaily() async {
+        guard let api else { return }
+        do {
+            let data=try await api.request("/v1/daily",limit:128*1024)
+            let value=try dailyCache.saveState(data);daily=value;dailyMessage=value.status.message
+            if dailyDetail?.date==value.latest?.date { dailyDetail=value.latest }
+        } catch { dailyMessage="收盘总结暂未连接，已有缓存仍可阅读。" }
+    }
+    func loadDailyReport(_ date:String) async {
+        guard validDailyDate(date),!dailyBusy else { return }
+        dailyDetail=try? dailyCache.loadReport(date)
+        guard let api else { return }
+        dailyBusy=true;defer { dailyBusy=false }
+        do {
+            let data=try await api.request("/v1/daily/\(date)",limit:128*1024)
+            let value=try dailyCache.saveReport(data)
+            guard value.date==date else { throw MobileFailure.invalidData };dailyDetail=value
+        } catch { dailyMessage="该日期的总结尚未载入，可稍后重试。" }
+    }
+    @discardableResult func dailyAction(_ action:String,values:[String:Any]=[:]) async -> Bool {
+        guard let api,!dailyBusy,["settings","generate"].contains(action) else { return false }
+        dailyBusy=true;defer { dailyBusy=false }
+        do {
+            let body=try JSONSerialization.data(withJSONObject:values)
+            _=try await api.request("/v1/daily/\(action)",method:"POST",body:body,limit:65536)
+            await refreshDaily();return true
+        } catch { dailyMessage=error.localizedDescription;return false }
     }
     func toggleFavorite(_ stock:Stock) {
         if favorites.contains(stock.id) { favorites.remove(stock.id) } else { favorites.insert(stock.id) }

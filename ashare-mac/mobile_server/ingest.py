@@ -10,7 +10,9 @@ import zipfile
 from pathlib import Path,PurePosixPath
 from deployment.publish import verify,publish as publish_market
 from engine.snapshot_protocol import FILE_NAMES,REVISION,sha256_file
+from engine.close_proof import valid_date,verify_package_close
 from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,checked_file,atomic_json
+from .queue import PERSISTENT_FIELDS,CONTEXT_FIELDS
 
 
 def member_limit(name):
@@ -40,8 +42,13 @@ def extract(bundle,destination):
                     output.write(data);remaining-=len(data)
                 if source.read(1):raise ValueError('Archive size mismatch')
     metadata=json.loads(checked_file(destination,destination/'bundle.json',65536).read_text())
-    if set(metadata)!={'schema_version','input_revision','data_revision','generation'} or metadata['schema_version']!=1 or not all(REVISION.fullmatch(metadata[k]) for k in ['input_revision','data_revision']) or not GENERATION.fullmatch(metadata['generation']):raise ValueError('Invalid bundle metadata')
+    base={'schema_version','input_revision','data_revision','generation'}
+    closing={'expected_as_of','close_attestation'}
+    if set(metadata) not in [base,base|closing] or metadata['schema_version']!=1 or not all(REVISION.fullmatch(metadata[k]) for k in ['input_revision','data_revision']) or not GENERATION.fullmatch(metadata['generation']):raise ValueError('Invalid bundle metadata')
     market=verify(destination/'market',metadata['data_revision'])
+    if closing.issubset(metadata):
+        if not valid_date(metadata['expected_as_of']):raise ValueError('Invalid expected closing date')
+        verify_package_close(destination/'market',metadata['expected_as_of'],metadata['close_attestation'])
     codes=None
     for strategy in STRATEGIES:
         folder=destination/'research'/strategy
@@ -52,6 +59,11 @@ def extract(bundle,destination):
                 or info.get('data_revision')!=market['revision'] or info.get('as_of')!=market['as_of']
                 or info.get('report_bytes')!=len(report_bytes) or info.get('report_sha256')!=hashlib.sha256(report_bytes).hexdigest()
                 or report.get('data_revision')!=market['revision'] or report.get('as_of')!=market['as_of'] or report.get('strategy_id')!=strategy):raise ValueError('Research version mismatch')
+        if closing.issubset(metadata):
+            refreshed=report.get('last_update') or {}
+            if (refreshed.get('forced_latest_date')!=metadata['expected_as_of']
+                    or refreshed.get('close_attestation')!=metadata['close_attestation']):
+                raise ValueError('Research closing evidence differs from the upload proof')
         current={stock['ts_code'] for stock in report['stocks']}
         if len(current)!=info['stock_count'] or len(current)!=len(report['stocks']) or not 1<=len(current)<=10000 or not all(CODE.fullmatch(code) for code in current):raise ValueError('Invalid research stock universe')
         if codes is not None and current!=codes:raise ValueError('Research universes differ')
@@ -86,6 +98,8 @@ def activate(bundle,root,market_root,queue,job):
             if source.read(1):raise ValueError('Upload exceeds declared size')
         if sha256_file(immutable)!=captured['artifact_sha256']:raise ValueError('Upload checksum mismatch')
         metadata=extract(immutable,stage)
+        if metadata.get('expected_as_of')!=captured.get('expected_as_of'):
+            raise ValueError('Closing job target or fresh-data proof is missing from upload')
         # systemd exposes the two writable roots as separate bind mounts.
         # Copy into private market staging, then rename on that same mount.
         market_stage=Path(tempfile.mkdtemp(prefix='.mobile-',dir=market_root/'staging'))
@@ -93,7 +107,7 @@ def activate(bundle,root,market_root,queue,job):
         with queue.locked():
             state=queue.state()
             if (state['status']!='publishing' or not queue.owns(state,job['id'],job['lease'])
-                    or any(state[k]!=captured[k] for k in ['artifact_bytes','artifact_sha256'])):raise ValueError('Publication identity changed')
+                    or any(state.get(k)!=captured.get(k) for k in {'artifact_bytes','artifact_sha256'}|CONTEXT_FIELDS)):raise ValueError('Publication identity changed')
             current=json.loads((market_root/'current/manifest.json').read_text())['revision']
             if current not in [metadata['input_revision'],metadata['data_revision']]:raise ValueError('Market snapshot changed during computation')
             target=market_root/'staging'/metadata['data_revision']
@@ -109,8 +123,13 @@ def activate(bundle,root,market_root,queue,job):
             old=(root/'current').resolve() if (root/'current').is_symlink() else None
             pointer=root/('.current-'+os.urandom(4).hex());pointer.symlink_to(Path('releases')/metadata['generation']);os.replace(pointer,root/'current')
             if old and old.is_dir() and old!=release:os.utime(old,None)
-            state={k:v for k,v in state.items() if k in {'id','request_id','action','created_at','executor'}}
+            state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS|{'executor'}}
             state.update(status='completed',message='已发布 '+metadata['data_revision'][:8]+f' · {len(STRATEGIES)} 套盘后策略及 K 线校验通过');queue.save(state)
+        if metadata.get('expected_as_of'):
+            atomic_json(root/'jobs/closing-receipts'/(metadata['expected_as_of']+'.json'),
+                {'schema_version':1,'date':metadata['expected_as_of'],'generation':metadata['generation'],
+                 'data_revision':metadata['data_revision'],'close_attestation':metadata['close_attestation'],
+                 'job_id':captured['id'],'published_at':time.time()})
         versions=sorted([p for p in (root/'releases').iterdir() if GENERATION.fullmatch(p.name) and p.is_dir() and not p.is_symlink()],key=lambda p:p.stat().st_mtime,reverse=True)
         protected={metadata['generation'],*[p.name for p in versions if p!=release][:2]}
         for path in versions:

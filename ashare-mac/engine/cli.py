@@ -69,7 +69,12 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         if not set(recent.trade_date.unique()).issubset(market_dates):
             raise ValueError('日线与交易日历不一致')
         progress(f'计算 {bars.ts_code.nunique():,} 只股票的趋势、量能与风险…')
-        signals = classify(features(bars,market_dates=market_dates),strategy=strategy)
+        computed = features(bars,market_dates=market_dates)
+        if strategy == 'momentum_60':
+            from .momentum import add_constraints
+            computed = add_constraints(computed, factors, limits)
+        signals = classify(computed,strategy=strategy)
+        del computed
         latest = signals[signals.trade_date==asof]
         shortlist = select_day(latest)
         all_latest = signals.groupby('ts_code',sort=False).tail(1).copy()
@@ -80,7 +85,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         all_latest['name'] = all_latest.name.fillna(all_latest.ts_code)
         all_latest['industry'] = all_latest.industry.fillna('未分类')
         all_latest['state'] = np.select([all_latest.ts_code.isin(shortlist.ts_code),all_latest.confirmed,
-            all_latest.watch,all_latest.eligible], ['入选','转强','等待','观察'],default='排除')
+            all_latest.watch,all_latest.eligible], ['入选','符合' if strategy=='momentum_60' else '转强','等待','观察'],default='排除')
         all_latest['change'] = all_latest.ret1 * 100
         all_latest['rank'] = all_latest.ts_code.map({c:i+1 for i,c in enumerate(shortlist.ts_code)}).fillna(0).astype(int)
         all_latest['adjusted'] = all_latest.ts_code.isin(factors.loc[factors.trade_date==asof,'ts_code'])
@@ -91,6 +96,9 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
                 'strength_score','trend_score','position_score','volume_score','risk_score','liquidity_rank']
         if strategy == 'golden_pit':
             from .golden_pit import METRICS
+            keep += METRICS
+        if strategy == 'momentum_60':
+            from .momentum import METRICS
             keep += METRICS
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
@@ -103,6 +111,9 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         warnings = ['历史股票名单与 ST 状态缺少逐日快照，存在幸存者偏差；当前行业也用于历史分组。',
                     '固定参数的历史信号研究，样本会重叠；尚未完成独立样本外与模拟实盘验证。',
                     '按日线与实际限制价估计成交，未建模盘口、最小佣金与整数手数；不构成组合收益。']
+        if strategy == 'momentum_60':
+            warnings[0] = '此处历史事件按当前股票名称过滤，存在名单与 ST 状态回溯偏差；本策略不设行业限额。'
+            warnings.insert(0, '新增研究策略：2026 年 1–4 月选择期资金账本胜率 48.69%，净收益 +1.99%；开发期净收益 -6.34%，尚未通过完整验证。此页全期事件统计属于事后观察，不能替代封存研究。')
         if missing_adj: warnings.insert(0,f'最新日线有 {missing_adj} 只缺复权因子；连续价格信号仅供观察。')
         if missing_limit: warnings.insert(0,f'最新日线有 {missing_limit} 只缺涨跌停价；缺失事件不能计为可成交。')
         if stale_sessions: warnings.insert(0,f'行情落后交易日历 {stale_sessions} 个交易日，请更新数据。')

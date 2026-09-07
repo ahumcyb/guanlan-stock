@@ -32,6 +32,7 @@ struct MobileRoot:View {
             }.tint(MobileTheme.teal)
         }
         .task { await store.watchJob() }
+        .sheet(isPresented:$store.dailyPresented) { DailySummaryScreen().environmentObject(store) }
         .onChange(of:phase) { _,value in if value == .active { Task { await store.synchronize() } } }
     }
 }

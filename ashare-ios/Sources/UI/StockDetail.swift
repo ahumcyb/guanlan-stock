@@ -24,7 +24,14 @@ struct MobileStockDetail:View {
                 ResearchCard {
                     VStack(alignment:.leading,spacing:16) {
                         Text("为什么进入观察").font(.headline)
-                        if manifest.strategy=="golden_pit" {
+                        if manifest.strategy=="momentum_60" {
+                            condition("中期趋势",detail:"收盘高于 MA60",passed:stock.trendOk)
+                            condition("六十日收益",detail:percent(stock.ret60),passed:stock.strengthOk)
+                            condition("成交活跃",detail:"20 日均成交额位于主板基础池前 40%",passed:stock.volumeOk)
+                            condition("波动数据完整",detail:"60 日日收益波动 \(percent(stock.vol60))",passed:stock.pullbackOk)
+                            condition("当日克制",detail:"当天涨幅不超过 5%",passed:stock.turnOk)
+                            Text("原始动量比值 \(decimal(stock.momentumRatio))\n首页分数为候选内相对排名，不是胜率。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                        } else if manifest.strategy=="golden_pit" {
                             condition("长期趋势",detail:"收盘 > MA60，MA60 五日变化 \(percent(stock.ma60Slope))",passed:stock.trendOk)
                             condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",passed:stock.strengthOk)
                             condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",passed:stock.pullbackOk)
@@ -44,7 +51,7 @@ struct MobileStockDetail:View {
                 ResearchCard {
                     VStack(alignment:.leading,spacing:14) {
                         Text("下一交易日的观察计划").font(.headline)
-                        HStack { Metric(label:"回踩参考",value:decimal(stock.support));Metric(label:manifest.strategy=="golden_pit" ? "坑口压力":"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
+                        HStack { Metric(label:manifest.strategy=="momentum_60" ? "趋势参考 MA60":"回踩参考",value:decimal(stock.support));Metric(label:manifest.strategy=="golden_pit" ? "坑口压力":"突破观察",value:decimal(stock.breakout));Metric(label:"失效参考",value:decimal(stock.invalidation),color:MobileTheme.amber) }
                         if manifest.strategy=="golden_pit" { Text("MA20 为回踩参考，回撤前高点为坑口压力。失效参考取坑底下方 1% 与收盘价减 1.5 ATR 的较高者。").font(.caption).foregroundStyle(.secondary).lineSpacing(3) }
                         Text("高开超过 3% 放弃追入，默认研究持有 3 日。价格仅作观察参考，历史检验未模拟盘中止损。").font(.caption).foregroundStyle(.secondary).lineSpacing(3)
                         Divider()

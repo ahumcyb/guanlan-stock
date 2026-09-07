@@ -69,7 +69,7 @@ def load_calendar(root,overlay,start,end,client):
     return table
 
 
-def update(root: Path, overlay: Path, through=None) -> dict:
+def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
     root, overlay = root.resolve(), overlay.resolve()
     if root == overlay or root in overlay.parents or overlay in root.parents:
         raise ValueError('补充数据目录必须与原始数据目录分离')
@@ -90,6 +90,13 @@ def update(root: Path, overlay: Path, through=None) -> dict:
         dates = sorted(calendar.loc[(calendar.is_open == 1) & (calendar.cal_date <= cutoff), 'cal_date'].astype(str))[-120:]
         if not dates:
             raise ValueError('找不到已收盘的交易日')
+        forced_date=dates[-1] if force_latest else None
+        if force_latest:
+            from .close_proof import closing_cutoff
+            if through and forced_date!=through:
+                raise ValueError('要求的收盘日期不是已知开市日')
+            if now<closing_cutoff(forced_date):
+                raise ValueError('收盘总结须在交易日 16:10 后重新核验行情')
         status('读取本地覆盖范围…')
         datasets = {k: read_dataset(root, overlay, k) for k in FIELDS}
         by_day = {k: {d: g for d, g in f.groupby('trade_date')} for k, f in datasets.items()}
@@ -104,9 +111,10 @@ def update(root: Path, overlay: Path, through=None) -> dict:
             for k in ['adj_factor', 'stk_limit']:
                 f = frames[k]
                 complete = complete and f is not None and len(codes & set(f.ts_code)) >= len(codes)*(1 if k == 'adj_factor' else .99)
-            if not complete:
+            if not complete or date==forced_date:
                 needed.append(date)
         failures, published = [], 0
+        closing_proofs={}
 
         def complete_day(i, date):
             try:
@@ -117,7 +125,7 @@ def update(root: Path, overlay: Path, through=None) -> dict:
                     coverage = (len(set(local.ts_code) & set(daily.ts_code))/len(daily)
                                 if local is not None and daily is not None and len(daily) else 0)
                     sufficient = local is not None and (date in complete_dates if k == 'daily' else coverage >= (1 if k == 'adj_factor' else .99))
-                    if sufficient:
+                    if sufficient and date!=forced_date:
                         frames[k] = local
                     else:
                         status(f'补齐 {i+1}/{len(needed)} · {date} · {k}')
@@ -129,7 +137,13 @@ def update(root: Path, overlay: Path, through=None) -> dict:
                         if k == 'daily' and len(remote) < minimum:
                             raise ValueError(f'日线仅 {len(remote)} 行，低于近期覆盖阈值 {minimum}，保留旧数据')
                         frames[k] = remote
-                publish_day(overlay/'updates', date, frames)
+                if date==forced_date:
+                    from .close_proof import make_attestation
+                    generation=date+'-'+os.urandom(6).hex()
+                    publish_day(overlay/'closing'/generation, date, frames)
+                    closing_proofs[date]=(make_attestation(date,frames,datetime.now(ZoneInfo('Asia/Shanghai'))),generation)
+                else:
+                    publish_day(overlay/'updates', date, frames)
                 status(f'已校验并保存 {date} · {len(frames["daily"])} 只')
                 return None
             except ValueError as e:
@@ -157,6 +171,9 @@ def update(root: Path, overlay: Path, through=None) -> dict:
         result = {'through': dates[-1], 'updated_days': published, 'checked_sessions': len(dates),
                   'completed_at': now.isoformat(), 'provider': 'ProMax',
                   'validation': 'partial' if failures else 'ok', 'failures':failures}
+        if force_latest:
+            proof,generation=closing_proofs.get(forced_date,(None,None))
+            result.update(forced_latest_date=forced_date,close_attestation=proof,closing_generation=generation)
         atomic_json(overlay/'last_update.json', result)
         status(f'更新结束 · 目标 {dates[-1]} · 已补齐 {published} 日 · 未补齐 {len(failures)} 日')
         return result
@@ -167,9 +184,10 @@ if __name__ == '__main__':
     parser.add_argument('--data-root', type=Path, required=True)
     parser.add_argument('--overlay', type=Path, required=True)
     parser.add_argument('--through')
+    parser.add_argument('--force-latest',action='store_true')
     args = parser.parse_args()
     try:
-        update(args.data_root, args.overlay, args.through)
+        update(args.data_root, args.overlay, args.through, force_latest=args.force_latest)
     except Exception as e:
         # Never print a provider payload or traceback with transport internals.
         print(str(e) if isinstance(e, ValueError) else f'更新失败（{type(e).__name__}），原有数据已保留', flush=True)

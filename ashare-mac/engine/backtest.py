@@ -61,11 +61,20 @@ def summarize(events):
                 worst=float(values.min()), p10=float(np.quantile(values,.1)), statuses=statuses)
 
 
+def monthly_results(events, dates, start):
+    # Keep calendar months with no signals; absence of trades is not a zero return.
+    months = sorted({date[:6] for date in dates if date >= start})
+    return [dict(month=month, **summarize([event for event in events
+            if event['horizon']==3 and event['signal_date'].startswith(month)])) for month in months]
+
+
 def study(signals: pd.DataFrame, factors: pd.DataFrame, limits: pd.DataFrame, dates):
+    momentum = 'strategy_id' in signals and signals.strategy_id.eq('momentum_60').all()
+    benchmark_label = '同信号日主板基础池成交额前五 · 不设行业限额' if momentum else '同信号日基础池成交额前十 · 每行业最多两只'
     counts = limits.groupby('trade_date').size()
     covered = counts[counts >= 4000].index.tolist()
     if not covered:
-        return dict(start='', end='', horizons=[], monthly=[], events=[], benchmark_label='流动性前十参照')
+        return dict(start='', end='', horizons=[], monthly=[], events=[], benchmark_label=benchmark_label)
     start = min(covered)
     subset = signals[signals.trade_date >= start]
     columns = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'vol']
@@ -79,7 +88,7 @@ def study(signals: pd.DataFrame, factors: pd.DataFrame, limits: pd.DataFrame, da
         # Baseline selected with D-day information on the same signal dates.
         reference = day[day.eligible].sort_values(['amount20','ts_code'], ascending=[False,True]).copy()
         reference['industry'] = reference.industry.fillna('未分类')
-        reference = reference[reference.groupby('industry').cumcount() < 2].head(10)
+        reference = reference.head(5) if momentum else reference[reference.groupby('industry').cumcount() < 2].head(10)
         reference_by_date[date] = reference.ts_code.tolist()
     events, horizons = [], []
     for h in (1,3,5):
@@ -93,9 +102,6 @@ def study(signals: pd.DataFrame, factors: pd.DataFrame, limits: pd.DataFrame, da
         summary, benchmark = summarize(current), summarize(baseline)
         horizons.append(dict(horizon=h, **summary, benchmark=benchmark))
         events.extend(current)
-    monthly = []
-    months = sorted({e['signal_date'][:6] for e in events})
-    for month in months:
-        monthly.append(dict(month=month, **summarize([e for e in events if e['horizon']==3 and e['signal_date'].startswith(month)])))
+    monthly = monthly_results(events, dates, start)
     return dict(start=start, end=dates[-1], horizons=horizons, monthly=monthly, events=events,
-                benchmark_label='同信号日基础池成交额前十 · 每行业最多两只')
+                benchmark_label=benchmark_label)

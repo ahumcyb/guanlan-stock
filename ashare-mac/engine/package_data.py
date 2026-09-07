@@ -11,12 +11,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pyarrow.parquet as pq
 
-from .data import read_dataset,read_reference,full_market_dates,atomic_json
+from .data import read_dataset,read_reference,full_market_dates,atomic_json,source_paths,combine,validate,FIELDS
 from .snapshot_protocol import FILE_NAMES,revision_for,validate_manifest,sha256_file,retain_snapshots
 from .update import validate_reference,validate_calendar
 
 
-def package(root,overlay,output):
+def package(root,overlay,output,closing_date=None):
     root,overlay,output=map(lambda p:p.resolve(),[root,overlay,output])
     if output==root or output in root.parents or root in output.parents:
         raise ValueError('打包目录必须与源数据目录分开')
@@ -24,14 +24,25 @@ def package(root,overlay,output):
     with (output/'.package.lock').open('w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise ValueError('已有行情打包正在运行') from None
-        return _package(root,overlay,output)
+        return _package(root,overlay,output,closing_date)
 
 
-def _package(root,overlay,output):
+def _package(root,overlay,output,closing_date=None):
     stage=Path(tempfile.mkdtemp(prefix='.staging-',dir=output))
     (stage/'raw').mkdir()
     try:
-        frames={kind:read_dataset(root,overlay,kind) for kind in ['daily','adj_factor','stk_limit']}
+        if closing_date:
+            from .close_proof import valid_date,read_closing_partition
+            if not valid_date(closing_date):raise ValueError('Invalid closing date')
+            closing=read_closing_partition(overlay,closing_date)
+            frames={}
+            for kind in FIELDS:
+                previous=[validate(pd.read_parquet(path,columns=FIELDS[kind]),kind) for path in source_paths(root,overlay,kind)]
+                # Only the attested target day is replaced in the NEW snapshot.
+                # The old snapshot/partitions and other dates remain immutable.
+                frames[kind]=combine([*[f[f.trade_date!=closing_date] for f in previous],closing[kind]],kind)
+        else:
+            frames={kind:read_dataset(root,overlay,kind) for kind in ['daily','adj_factor','stk_limit']}
         counts=frames['daily'].groupby('trade_date').size()
         asof=max(full_market_dates(counts))
         codes=set(frames['daily'].loc[frames['daily'].trade_date==asof,'ts_code'])
@@ -75,4 +86,5 @@ def _package(root,overlay,output):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--data-root',type=Path,required=True)
     p.add_argument('--overlay',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();package(a.data_root,a.overlay,a.output)
+    p.add_argument('--closing-date')
+    a=p.parse_args();package(a.data_root,a.overlay,a.output,a.closing_date)

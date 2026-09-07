@@ -15,7 +15,8 @@ from urllib.parse import urlsplit
 from engine.intraday import CODE, SLOTS, due_slot, local_now
 from .artifacts import atomic_json, checked_file
 
-DEFAULTS = dict(enabled=True, notification_enabled=True, ai_enabled=False, model='deepseek-v4-flash')
+DEFAULTS = dict(enabled=True, notification_enabled=True, ai_enabled=False, model='deepseek-v4-flash',
+                daily_enabled=False, daily_notification_enabled=True, daily_ai_enabled=True)
 MODELS = {'deepseek-v4-flash', 'deepseek-v4-pro'}
 
 
@@ -124,14 +125,14 @@ class RealtimeStore:
         return dict(DEFAULTS, **self.read('settings.json', {}))
 
     def configure(self, changes):
-        if not isinstance(changes, dict) or set(changes) - {'enabled', 'notification_enabled', 'ai_enabled', 'model', 'bark_url', 'deepseek_key', 'clear_bark', 'clear_deepseek'}:
+        if not isinstance(changes, dict) or set(changes) - {'enabled', 'notification_enabled', 'ai_enabled', 'model', 'bark_url', 'deepseek_key', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled'}:
             raise ValueError('设置字段无效')
         with self.lock():
             value = self.settings()
-            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'clear_bark', 'clear_deepseek']:
+            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled']:
                 if key in changes and type(changes[key]) is not bool:
                     raise ValueError('设置值无效')
-            for key in ['enabled', 'notification_enabled', 'ai_enabled']:
+            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled']:
                 if key in changes:
                     value[key] = changes[key]
             if 'model' in changes:
@@ -279,12 +280,12 @@ class RealtimeStore:
             self.save(state)
             return True
 
-    def event(self, state, title, body, kind, dedup):
+    def event(self, state, title, body, kind, dedup, url=None):
         if any(e.get('dedup') == dedup for e in state['events']):
             return
         event_id = str(uuid.uuid4())
         state['events'].append(dict(id=event_id, created_at=self.clock(), title=title, body=body, kind=kind,
-            dedup=dedup, status='pending', attempts=0, url='guanlan://alerts/' + event_id))
+            dedup=dedup, status='pending', attempts=0, url=url or 'guanlan://alerts/' + event_id))
 
     def result_event(self, state, report):
         if report['status'] == 'closed' or report['kind'] == 'prepare':
@@ -322,9 +323,11 @@ class RealtimeStore:
                     changed = True
                 if event['status'] not in ['pending', 'retry'] or event.get('retry_at', 0) > now:
                     continue
-                if not settings['notification_enabled'] or not settings.get('bark_key'):
+                notification_enabled=settings['daily_notification_enabled'] if event['kind']=='daily_review' else settings['notification_enabled']
+                if not notification_enabled or not settings.get('bark_key'):
                     event['status'] = 'unconfigured';changed = True;continue
-                if now - event['created_at'] > 180 and event['kind'] != 'test':
+                lifetime=21600 if event['kind']=='daily_review' else 180
+                if now - event['created_at'] > lifetime and event['kind'] != 'test':
                     event['status'] = 'expired';changed = True;continue
                 event.update(status='sending', sent_at=now, attempts=event['attempts'] + 1)
                 self.save(state)

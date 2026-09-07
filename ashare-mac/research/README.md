@@ -6,6 +6,8 @@
 
 原始代码所在本地提交为 `0efbea3`，后续报告导出不会改变被封存的计算文件。GitHub 的独立备份提交号可能不同，以报告内 `frozen.json` 的各文件 SHA-256 为准。所有命令在 `ashare-mac` 中执行，用工程 `.venv/bin/python`（Python 3.9、pandas 2.3.3、numpy 2.0.2）。
 
+后续用户要求将 `momentum_60` 加入 App 首页，生产引擎因而增加第四策略。重现此前封存实验须使用上述本地提交，或 GitHub 备份 `d09dc22` 的隔离副本；不要切换正在使用的 App 工作目录。当前新版源码无法通过旧冻结哈希是预期保护，不能重写旧 `frozen.json` 来绕过检查。
+
 本机不可变数据位于 `.cache/mobile-worker/market/releases/20260904-c0eccf474694bb2b`；历史约束缓存位于 `.cache/strategy-research/constraints`。报告带有输入和约束指纹，行情本体不进 Git。换机器须取得同一不可变版本和同一约束文件；重新向供应商获取的历史数据可能有修订，不应假定与本次相同。
 
 ```sh

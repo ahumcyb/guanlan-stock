@@ -2,8 +2,8 @@
 import numpy as np
 import pandas as pd
 
-VERSION = 'shortline-1.2.0'
-STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑'}
+VERSION = 'shortline-1.3.0'
+STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑', 'momentum_60':'60 日风险调整动量'}
 
 
 def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:
@@ -97,10 +97,15 @@ def classify(features_frame: pd.DataFrame, strategy='pullback') -> pd.DataFrame:
     if strategy == 'golden_pit':
         from .golden_pit import classify_pit
         return classify_pit(x)
+    if strategy == 'momentum_60':
+        from .momentum import classify_momentum
+        return classify_momentum(x)
     return x
 
 
 def select_day(day: pd.DataFrame, limit=10) -> pd.DataFrame:
+    if 'strategy_id' in day and not day.empty and day.strategy_id.eq('momentum_60').all():
+        return day[day.confirmed].sort_values(['momentum_ratio','ts_code'], ascending=[False,True]).head(min(limit,5)).copy()
     candidates = day[day.confirmed].sort_values(['score', 'ts_code'], ascending=[False, True]).copy()
     candidates['industry'] = candidates.industry.fillna('未分类')
     return candidates[candidates.groupby('industry').cumcount() < 2].head(limit)

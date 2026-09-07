@@ -14,13 +14,16 @@ struct ResearchView:View {
                             VStack(alignment:.leading,spacing:12) {
                                 HStack {
                                     Image(systemName:"checkmark.shield").foregroundStyle(Palette.teal)
-                                    Text((h.mean ?? -1)>0 && (h.mean ?? -1)>(h.benchmark.mean ?? 0) ? "出现正向历史信号，仍需样本外验证":"策略尚未通过验证")
+                                    Text(!report.isMomentum60 && (h.mean ?? -1)>0 && (h.mean ?? -1)>(h.benchmark.mean ?? 0) ? "出现正向历史信号，仍需样本外验证":"策略尚未通过验证")
                                         .font(.system(size:16,weight:.semibold))
                                     Spacer(); Badge(text:"研究阶段",color:Palette.amber)
                                 }
                                 Text("\(dateText(report.backtest.start)) — \(dateText(report.backtest.end))。收益按次日开盘进入计算；指标只统计已结算事件，缺失和退出受阻的数量单独披露。").font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(4)
                             }
                         }
+                    }
+                    if report.isMomentum60 {
+                        Text(Momentum60Guide.evidence + " 下列动态指标为另一口径的事后事件观察。").font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(4)
                     }
                     HStack(alignment:.top,spacing:16) {
                         ForEach(report.backtest.horizons) { h in
@@ -50,13 +53,15 @@ struct ResearchView:View {
                             HStack { Text("分月表现 · 默认 3 日").font(.system(size:14,weight:.semibold)); Spacer(); Text("平均净收益，并非组合净值").font(.system(size:10)).foregroundStyle(Palette.muted) }
                             Chart(report.backtest.monthly) { month in
                                 if let mean=month.mean {
-                                    BarMark(x:.value("月份",String(month.month.suffix(2))+"月"),y:.value("平均净收益 %",mean*100))
+                                    BarMark(x:.value("月份",month.displayMonth),y:.value("平均净收益 %",mean*100))
                                         .foregroundStyle(mean>=0 ? Palette.up.opacity(0.75):Palette.down.opacity(0.75))
                                         .annotation(position:mean>=0 ? .top:.bottom) { Text(percent(mean,signed:true)).font(.system(size:10)).foregroundStyle(Palette.muted) }
                                 }
                                 RuleMark(y:.value("零收益",0)).foregroundStyle(Palette.line)
-                            }.frame(height:190).chartYAxis { AxisMarks { value in AxisGridLine(); AxisValueLabel { if let v=value.as(Double.self) { Text("\(decimal(v,digits:1))%") } } } }
-                            HStack { ForEach(report.backtest.monthly) { m in Text("\(m.month.suffix(2))月 \(m.count)例").font(.system(size:10)).foregroundStyle(Palette.muted); Spacer() } }
+                            }.frame(height:190)
+                                .chartXScale(domain:report.backtest.monthly.map(\.displayMonth))
+                                .chartYAxis { AxisMarks { value in AxisGridLine(); AxisValueLabel { if let v=value.as(Double.self) { Text("\(decimal(v,digits:1))%") } } } }
+                            HStack { ForEach(report.backtest.monthly) { m in Text("\(m.displayMonth) \(m.sampleLabel)").font(.system(size:10)).foregroundStyle(Palette.muted); Spacer() } }
                         }
                     }
                     if let h=report.backtest.horizons.first(where:{$0.horizon==3}) {
@@ -168,6 +173,12 @@ struct StrategyView:View {
                 RealtimeStrategyDescriptions()
                 Divider().padding(.vertical,10)
                 Text("盘后研究策略").font(.system(size:20,weight:.semibold))
+                Panel { VStack(alignment:.leading,spacing:13) {
+                    HStack { Text("60 日风险调整动量").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增 · 研究",color:Palette.amber) }
+                    Text(Momentum60Guide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)
+                    Text(Momentum60Guide.evidence).font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(5)
+                    ForEach(Momentum60Guide.rules,id:\.self) { Text($0).font(.system(size:12)).foregroundStyle(Palette.muted).lineSpacing(5) }
+                } }
                 Panel { VStack(alignment:.leading,spacing:13) {
                     HStack { Text("黄金坑").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增") }
                     Text(GoldenPitGuide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)

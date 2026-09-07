@@ -161,7 +161,7 @@ import UniformTypeIdentifiers
     }
 
     func changeStrategy(_ value:String) {
-        guard !busy, value != strategy else { return }
+        guard !busy, AfterCloseStrategies.ids.contains(value), value != strategy else { return }
         strategy=value; UserDefaults.standard.set(value,forKey:"strategy")
         run(update:false)
     }

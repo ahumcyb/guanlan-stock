@@ -26,7 +26,7 @@ struct MobileDataScreen:View {
                             Button { Task { await store.synchronize() } } label: { Label("同步最新结果",systemImage:"arrow.down.circle").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.borderedProminent).disabled(store.busy || !store.connected)
                             Button { Task { await store.startJob("recompute") } } label: { Label("重新选股",systemImage:"arrow.clockwise").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.bordered).disabled(!canSubmit)
                             Button { Task { await store.startJob("refresh") } } label: { Label("ProMax 更新数据并选股",systemImage:"externaldrive.badge.plus").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.bordered).disabled(!canSubmit || store.status?.canRefresh != true)
-                            Text("同步读取已发布结果；重新选股使用已有行情。更新会补齐必要日线及配套数据，再计算三套盘后策略。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                            Text("同步读取已发布结果；重新选股使用已有行情。更新会补齐必要日线及配套数据，再计算四套盘后策略。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                         }
                     }
                     if let report=store.report {
@@ -34,12 +34,15 @@ struct MobileDataScreen:View {
                             VStack(alignment:.leading,spacing:16) {
                                 HStack { Text("已同步的数据").font(.headline);Spacer();StatePill(text:dateText(report.asOf)) }
                                 ForEach(report.sources) { source in VStack(alignment:.leading,spacing:6) { HStack { Text(source.title);Spacer();Text("\(source.rows.formatted()) 行").monospacedDigit() }.font(.subheadline);Text("\(dateText(source.start)) — \(dateText(source.end))").font(.caption).foregroundStyle(.secondary) } }
-                                Text("三套盘后策略、价格和 K 线绑定同一数据版本。已下载的报告和最近查看的 K 线可离线使用。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                                Text("四套盘后策略、价格和 K 线绑定同一数据版本。已下载的报告和最近查看的 K 线可离线使用。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                             }
                         }
                     }
                     ResearchCard {
                         VStack(alignment:.leading,spacing:14) {
+                            Button { store.openDailySummary() } label: {
+                                Label("收盘总结与 DeepSeek 设置",systemImage:"sun.horizon").frame(maxWidth:.infinity,minHeight:32)
+                            }.buttonStyle(.bordered)
                             Label("私人服务器连接",systemImage:"lock.shield").font(.headline)
                             Text(store.connected ? "106.14.125.189 · 已配置专用证书与访问凭据":"导入手机配对文件后开始使用。").font(.subheadline).foregroundStyle(.secondary)
                             Button(store.connected ? "更换连接配置":"导入连接配置") { importing=true }.buttonStyle(.bordered)

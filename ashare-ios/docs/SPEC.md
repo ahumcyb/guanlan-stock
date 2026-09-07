@@ -2,9 +2,9 @@
 
 ## 目标与已确认范围
 
-用户希望在 iPhone 获得与现有 Mac 软件相同的选股效果，使用普通 Apple ID 在个人设备安装。使用原生 SwiftUI，最低 iOS 17，支持 iPhone 与 iPad。复用 Mac 的数据模型、三套盘后规则、报价和历史检验计算；不重新训练或更改策略。
+用户希望在 iPhone 获得与现有 Mac 软件相同的选股效果，使用普通 Apple ID 在个人设备安装。使用原生 SwiftUI，最低 iOS 17，支持 iPhone 与 iPad。复用 Mac 的数据模型、四套盘后规则、报价和历史检验计算；不重新训练或更改策略。
 
-核心流程：搜索 / 排序 / 精选和全部股票；切换三套盘后策略；30/60/120 日日 K、均线和成交量、触摸查看；条件依据和观察价格；设备内观察列表；CSV 系统分享；1/3/5 日研究统计和分月结果；查看数据日期和覆盖、同步结果、发起服务器重新计算及 ProMax 更新。
+核心流程：搜索 / 排序 / 精选和全部股票；切换四套盘后策略；30/60/120 日日 K、均线和成交量、触摸查看；条件依据和观察价格；设备内观察列表；CSV 系统分享；1/3/5 日研究统计和分月结果；查看数据日期和覆盖、同步结果、发起服务器重新计算及 ProMax 更新。
 
 手机使用 HTTPS + 独立访问令牌连接 106.14.125.189。按用户追加要求，**Mac 优先更新和计算，然后上传结果；Mac 无法连接或执行中失联、租约过期时才由服务器接管**。手机校验并缓存研究报告，图表按股票下载。首次配对通过私有配置文件导入，令牌存钥匙串；不在 App 或 Git 中保存 root 密码、ProMax 密钥。观察列表首版随设备保存，策略与行情口径相同。
 
@@ -25,7 +25,7 @@ API 采用 `/v1`，所有业务接口要求 `Authorization: Bearer <token>`。�
 |---|---|---|
 | GET | /health | 不含数据或凭据的健康状态 |
 | GET | /v1/status | 当前数据日期、任务状态、更新能力 |
-| GET | /v1/reports/{leaders,pullback,golden_pit}/current | 固定版本清单，报告大小、SHA-256、日期 |
+| GET | /v1/reports/{leaders,pullback,golden_pit,momentum_60}/current | 固定版本清单，报告大小、SHA-256、日期 |
 | GET | /v1/reports/{strategy}/{generation}/report.json | 该版本完整研究快照，最大 12 MiB |
 | GET | /v1/reports/{strategy}/{generation}/charts/{code}.json | 该快照最多120根 K 线，最大128 KiB |
 | POST | /v1/jobs | `{"action":"recompute"或"refresh","request_id":"规范 UUID"}`，单任务、冷却、去重，返回202 |

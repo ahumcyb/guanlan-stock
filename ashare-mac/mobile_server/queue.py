@@ -10,9 +10,12 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from .artifacts import atomic_json,checked_file
+from engine.close_proof import valid_date
 
 ACTIVE={'queued','running','publishing'}
-PUBLIC_FIELDS={'id','status','message','action','created_at','executor'}
+CONTEXT_FIELDS={'expected_as_of','purpose'}
+PERSISTENT_FIELDS={'id','request_id','action','created_at'}|CONTEXT_FIELDS
+PUBLIC_FIELDS={'id','status','message','action','created_at','executor'}|CONTEXT_FIELDS
 FIELDS=PUBLIC_FIELDS|{'request_id','lease','lease_until','artifact_sha256','artifact_bytes'}
 
 
@@ -22,6 +25,14 @@ def canonical_uuid(value):
 
 
 def number(value):return type(value) in (int,float) and math.isfinite(value) and value>=0
+
+
+def closing_arguments(job):
+    present=CONTEXT_FIELDS & set(job)
+    if not present:return []
+    if present!=CONTEXT_FIELDS or job.get('purpose')!='daily_review' or job.get('action')!='refresh' or not valid_date(job.get('expected_as_of')):
+        raise ValueError('Invalid closing job context')
+    return ['--expected-as-of',job['expected_as_of']]
 
 
 class JobQueue:
@@ -45,6 +56,8 @@ class JobQueue:
             if key in value and not number(value[key]):raise ValueError('Invalid job timestamp')
         if 'executor' in value and value['executor'] not in ['mac','server']:raise ValueError('Invalid executor')
         if 'action' in value and value['action'] not in ['recompute','refresh']:raise ValueError('Invalid action')
+        closing_arguments(value)
+        if value['status']=='idle' and CONTEXT_FIELDS & set(value):raise ValueError('Idle job cannot carry closing context')
         for key in ['lease','artifact_sha256']:
             if key in value and (not isinstance(value[key],str) or len(value[key])!=64 or any(c not in '0123456789abcdef' for c in value[key])):raise ValueError('Invalid lease')
         if 'artifact_bytes' in value and (type(value['artifact_bytes']) is not int or not 0<value['artifact_bytes']<=256*1024*1024):raise ValueError('Invalid artifact size')
@@ -74,17 +87,20 @@ class JobQueue:
 
     def expire(self,state):
         if state['status'] in ['running','publishing'] and state['lease_until']<=self.clock():
-            state={k:v for k,v in state.items() if k in {'id','request_id','action','created_at'}}
+            state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS}
             state.update(status='queued',message='执行连接中断，等待重新接管');self.save(state)
         return state
 
-    def submit(self,action,request_id):
+    def submit(self,action,request_id,expected_as_of=None):
         if action not in ['refresh','recompute'] or not canonical_uuid(request_id):raise ValueError('Invalid job request')
+        context={} if expected_as_of is None else {'purpose':'daily_review','expected_as_of':expected_as_of}
+        closing_arguments(dict(action=action,**context))
         with self.locked():
             state=self.expire(self.state())
             if state.get('request_id')==request_id or state['status'] in ACTIVE:return self.public()
             if self.clock()-state.get('created_at',0)<(300 if action=='refresh' else 60):raise BlockingIOError('Cooldown')
             state=dict(id=str(uuid.uuid4()),request_id=request_id,action=action,status='queued',created_at=self.clock(),message='已提交，优先等待 Mac 计算')
+            state.update(context)
             self.save(state);return self.public()
 
     def claim(self,executor):
@@ -129,6 +145,6 @@ class JobQueue:
         with self.locked():
             state=self.state()
             if state['status']!='running' or not self.owns(state,job_id,lease):return False
-            state={k:v for k,v in state.items() if k in {'id','request_id','action','created_at','executor'}}
+            state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS|{'executor'}}
             state.update(status='failed',message='Mac 未完成本次计算，旧结果已保留；请检查本机运行记录后重试')
             self.save(state);return True
