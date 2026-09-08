@@ -57,29 +57,41 @@ class BottomVolumeTests(unittest.TestCase):
         self.assertEqual(result['matched_count'], 0)
         self.assertEqual(result['lookback'], 60)
 
-    def test_three_times_volume_and_zero_or_ten_percent_position_are_inclusive(self):
-        at_low = run(one_quote=quote(close=10.0, change=0.0))
+    def test_two_point_five_times_volume_and_position_boundaries_are_inclusive(self):
+        at_low = run(one_quote=quote(close=10.0, pre_close=9.99, vol=250_000.0))
         self.assertEqual(at_low['status'], 'ready')
         self.assertEqual(at_low['matched_count'], 1)
         self.assertEqual([row['ts_code'] for row in at_low['candidates']], ['600000.SH'])
         self.assertEqual(at_low['lookback'], 60)
+        self.assertEqual(at_low['rule_version'], 2)
 
         at_ten_percent = run(one_quote=quote(close=11.0, change=10.0))
         self.assertEqual(at_ten_percent['matched_count'], 1)
 
-        below_volume = run(one_quote=quote(vol=299_999.0, amount=10.5 * 299_999.0))
+        below_volume = run(one_quote=quote(vol=249_999.0, amount=10.5 * 249_999.0))
         self.assert_empty(below_volume)
 
     def test_below_the_prior_low_or_above_ten_percent_is_excluded(self):
         self.assert_empty(run(one_quote=quote(close=9.99, change=-0.1)))
         self.assert_empty(run(one_quote=quote(close=11.0001, change=10.001)))
 
-    def test_rule_does_not_inherit_the_original_three_to_five_percent_change_filter(self):
+    def test_only_positive_change_is_allowed_without_three_to_five_percent_limit(self):
         down = run(one_feature=feature(low60=9.0), one_quote=quote(close=9.8, change=-2.0))
+        flat = run(one_quote=quote(close=10.0, change=0.0))
+        small_up = run(one_quote=quote(close=10.01, vol=250_000.0))
         up = run(one_quote=quote(close=10.8, change=8.0))
 
-        self.assertEqual(down['matched_count'], 1)
+        self.assert_empty(down)
+        self.assert_empty(flat)
+        self.assertEqual(small_up['matched_count'], 1)
         self.assertEqual(up['matched_count'], 1)
+
+    def test_positive_change_is_calculated_from_price_and_not_rounded_to_zero(self):
+        self.assert_empty(run(one_quote=quote(close=10.,change=5.)))
+        result = run(one_feature=feature(low60=2900.,last_close=3000.),
+                     one_quote=quote(close=3000.01,pre_close=3000.,vol=250_000.))
+        self.assertEqual(result['matched_count'],1)
+        self.assertGreater(result['candidates'][0]['change'],0)
 
     def test_stale_quote_wrong_feature_date_st_and_missing_low_are_fail_closed(self):
         cases = [

@@ -102,7 +102,7 @@ struct RealtimeView: View {
                     ForEach(store.history) { run in Text(run.label).tag(run.slot) }
                 }.frame(maxWidth:460).disabled(store.busy)
                 if selectedSlot.isEmpty {
-                    GroupBox("14:30 · 底部放量3倍") {
+                    GroupBox("14:30 · 底部放量2.5倍上涨") {
                         if let report=store.state?.lastBottom { bottomSection(report).padding(12) }
                         else { Text("下一交易日14:30开始检查。尚无这套策略的完整结果，未记为0只。").font(.system(size:12)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }
                     }
@@ -208,6 +208,7 @@ struct RealtimeView: View {
         if let bottom=report.bottomVolume {
             VStack(alignment:.leading,spacing:12) {
                 Text("\(dateText(report.date)) · 14:30 原始结果").font(.headline)
+                Text(bottom.ruleLabel).font(.caption).foregroundStyle(Palette.muted)
                 if bottom.complete {
                     Text("命中 \(bottom.matchedCount) 只 · 展示 \(bottom.candidates.count) 只 · 按放量倍数排序").font(.system(size:12)).foregroundStyle(Palette.muted)
                     candidateColumn(report,"bottom_volume")

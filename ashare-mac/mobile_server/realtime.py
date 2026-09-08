@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from engine.intraday import CODE, SLOTS, due_slot, local_now
+from engine.intraday import CODE, SLOTS, due_slot, local_now, BOTTOM_RULE_VERSION, BOTTOM_MIN_VOLUME
 from .artifacts import atomic_json, checked_file
 from .realtime_history import RealtimeArchive,run_state
 
@@ -58,6 +58,7 @@ def valid_number(value):
 
 def validate_bottom(bottom,job,now):
     if (job.get('id')!=job['date']+'-1430' or not isinstance(bottom,dict) or bottom.get('lookback')!=60
+            or type(bottom.get('rule_version')) is not int or bottom['rule_version']!=BOTTOM_RULE_VERSION
             or bottom.get('status') not in ['ready','empty','blocked']
             or type(bottom.get('matched_count')) is not int or not 0<=bottom['matched_count']<=6500
             or not isinstance(bottom.get('candidates'),list) or len(bottom['candidates'])>10
@@ -75,7 +76,7 @@ def validate_bottom(bottom,job,now):
                 or not bounded_text(row.get('name'),30) or not bounded_text(row.get('state'),40)
                 or row.get('reference_date')!=job['previous_date']
                 or any(not valid_number(row.get(k)) for k in ['price','change','quote_at','volume_multiple','volume_ratio','vwap','low60','distance_low60'])
-                or row['price']<=0 or row['low60']<=0 or row['volume_multiple']<3 or row['vwap']<=0
+                or row['price']<=0 or row['low60']<=0 or row['volume_multiple']<BOTTOM_MIN_VOLUME or row['change']<=0 or row['vwap']<=0
                 or not -1e-6<=row['distance_low60']<=.100001
                 or abs(row['price']/row['low60']-1-row['distance_low60'])>.001
                 or not -15<=now-row['quote_at']<=180 or local_now(row['quote_at']).strftime('%Y%m%d')!=job['date']):
@@ -358,7 +359,7 @@ class RealtimeStore:
         bottom=report.get('bottom_volume')
         if bottom and bottom['status'] in ['ready','empty']:
             total=bottom['matched_count'];rows=bottom['candidates']
-            body=f'近60日低点上方0%–10%，累计量≥前5日均量3倍：命中{total}只。'
+            body=f'近60日低点上方0%–10%，累计量≥前5日均量2.5倍且当日上涨：命中{total}只。'
             if total>len(rows):body+=f'按放量倍数列出前{len(rows)}只。'
             if rows:body+='\n'+'；'.join(row['name']+'('+row['ts_code'][:6]+') '+format(row['volume_multiple'],'.2f')+'倍' for row in rows)
             if report['status'] in ['ready','empty']:

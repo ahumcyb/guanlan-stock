@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 import pandas as pd
 
 from .data import atomic_json, combine, source_paths, full_market_dates, minimum_market_rows, validate
-from .intraday import CODE, local_now, normalize_quote, screen,bottom_volume_screen
+from .intraday import CODE, local_now, normalize_quote, screen,bottom_volume_screen,BOTTOM_RULE_VERSION
 from .provider import BASE_URL, NoRedirect, ProMax, parse_response
 from .sina_quotes import fetch_quotes as sina_quotes
 
@@ -327,7 +327,7 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
     if slot_id==report['date']+'-1430':
         baseline=sum(type(f.get('low60')) in [int,float] and math.isfinite(f['low60']) and f['low60']>0 for f in value['features'].values())
         if baseline<len(value['features'])*.90:
-            report['bottom_volume']=dict(status='blocked',lookback=60,matched_count=0,candidates=[],checked_at=local_now().timestamp(),
+            report['bottom_volume']=dict(rule_version=BOTTOM_RULE_VERSION,status='blocked',lookback=60,matched_count=0,candidates=[],checked_at=local_now().timestamp(),
                 oldest_quote_at=min(q['quote_at'] for q in quotes),message='近60日低价历史基准未齐，底部放量未执行。')
         else:report['bottom_volume']=bottom_volume_screen(value['features'],quotes,local_now(),value['previous'])
     progress('index')
@@ -382,6 +382,6 @@ def run(root,cache,kind='screen',previous_candidates=None,provider=None,progress
     if bottom is not None:
         finished=local_now();report['generated_at']=finished.timestamp()
         if finished.timestamp()-bottom['oldest_quote_at']>180:
-            report['bottom_volume']=dict(status='blocked',lookback=60,matched_count=0,candidates=[],
+            report['bottom_volume']=dict(rule_version=BOTTOM_RULE_VERSION,status='blocked',lookback=60,matched_count=0,candidates=[],
                 checked_at=finished.timestamp(),oldest_quote_at=bottom['oldest_quote_at'],message='行情在后续采集期间过时，底部放量结果未发布。')
     return report

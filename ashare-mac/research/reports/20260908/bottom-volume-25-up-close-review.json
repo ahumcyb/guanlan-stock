@@ -1,0 +1,66 @@
+{
+  "as_of": "20260908",
+  "basis": "completed_daily_close_review",
+  "revision": "20260908-41c30659b9046461",
+  "previous_date": "20260907",
+  "rule_version": 2,
+  "rule": "近60日低点上方0%–10%；全天量/前5日全天均量≥2.5；收盘价>前收",
+  "valid_quotes": 4984,
+  "historical_universe": 4985,
+  "matched_count": 2,
+  "candidates": [
+    {
+      "strategy": "bottom_volume",
+      "ts_code": "600777.SH",
+      "name": "新潮能源",
+      "price": 4.25,
+      "change": 5.19802,
+      "quote_at": 1788850800.0,
+      "time_basis": "completed_daily_review",
+      "reference_date": "20260907",
+      "volume_multiple": 2.986,
+      "volume_ratio": 2.986,
+      "vwap": 4.1597,
+      "low60": 3.9,
+      "distance_low60": 0.089744,
+      "state": "低位放量观察",
+      "checks": [
+        "现价在近60日最低价上方0%–10%",
+        "累计成交量≥前5日全天均量2.5倍",
+        "最新价高于前收，当日上涨"
+      ],
+      "pending": [
+        "低位不等于底部确认，放量可能伴随抛压",
+        "公告、减持及解禁风险需核查"
+      ]
+    },
+    {
+      "strategy": "bottom_volume",
+      "ts_code": "000778.SZ",
+      "name": "新兴铸管",
+      "price": 3.81,
+      "change": 4.098361,
+      "quote_at": 1788850800.0,
+      "time_basis": "completed_daily_review",
+      "reference_date": "20260907",
+      "volume_multiple": 2.899,
+      "volume_ratio": 2.899,
+      "vwap": 3.8013,
+      "low60": 3.53,
+      "distance_low60": 0.07932,
+      "state": "低位放量观察",
+      "checks": [
+        "现价在近60日最低价上方0%–10%",
+        "累计成交量≥前5日全天均量2.5倍",
+        "最新价高于前收，当日上涨"
+      ],
+      "pending": [
+        "低位不等于底部确认，放量可能伴随抛压",
+        "公告、减持及解禁风险需核查"
+      ]
+    }
+  ],
+  "intraday_1430_status": "unavailable",
+  "generated_at": "2026-09-08T21:55:44.426889+08:00",
+  "note": "独立收盘复核，非14:30历史快照，不写入实时提醒。"
+}

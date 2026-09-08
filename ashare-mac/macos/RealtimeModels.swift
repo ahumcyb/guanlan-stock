@@ -63,7 +63,9 @@ struct RealtimeSnapshot: Codable {
 struct BottomVolumeResult:Codable {
     let status:String;let lookback:Int;let matchedCount:Int;let candidates:[RealtimeCandidate]
     let checkedAt:Double;let oldestQuoteAt:Double;let message:String
+    let ruleVersion:Int?
     var complete:Bool { ["ready","empty"].contains(status) }
+    var ruleLabel:String { (ruleVersion ?? 1)==1 ? "当时规则：3倍，不限制涨跌":"2.5倍及以上，且当日上涨" }
 }
 
 struct RealtimeSelectionChange:Codable {
@@ -114,12 +116,14 @@ extension RealtimeSnapshot {
                   rows.allSatisfy({$0.strategy==strategy && $0.price.isFinite && $0.price>0 && $0.quoteAt.isFinite && $0.quoteAt<=generatedAt+15}) else { throw CocoaError(.fileReadCorruptFile) }
         }
         if let bottom=bottomVolume {
-            guard slot==date+"-1430",bottom.lookback==60,["ready","empty","blocked"].contains(bottom.status),
+            let rule=bottom.ruleVersion ?? 1
+            guard [1,2].contains(rule),slot==date+"-1430",bottom.lookback==60,["ready","empty","blocked"].contains(bottom.status),
                   (0...6500).contains(bottom.matchedCount),bottom.candidates.count<=10,bottom.matchedCount>=bottom.candidates.count,
                   bottom.checkedAt.isFinite,bottom.oldestQuoteAt.isFinite,
                   bottom.complete || bottom.candidates.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
             for row in bottom.candidates {
-                guard row.strategy=="bottom_volume",row.price>0,row.price.isFinite,row.volumeMultiple>=3,
+                guard row.strategy=="bottom_volume",row.price>0,row.price.isFinite,row.volumeMultiple.isFinite,
+                      row.volumeMultiple>=(rule==1 ? 3:2.5),row.change.isFinite,(rule==1 || row.change>0),
                       row.low60.map({$0>0 && $0.isFinite})==true,row.distanceLow60.map({(-0.000001...0.100001).contains($0)})==true,
                       row.referenceDate==previousDate,row.quoteAt.isFinite,row.quoteAt<=generatedAt+15 else { throw CocoaError(.fileReadCorruptFile) }
             }
@@ -201,7 +205,7 @@ func realtimeDate(_ timestamp: Double) -> String {
 }
 
 func realtimeStrategy(_ id: String) -> String {
-    ["overnight":"一夜持股 · 正文版","golden":"黄金半小时 · 七步法","bottom_volume":"底部放量 · 3倍观察"][id] ?? id
+    ["overnight":"一夜持股 · 正文版","golden":"黄金半小时 · 七步法","bottom_volume":"底部放量 · 2.5倍上涨"][id] ?? id
 }
 
 struct RealtimeStrategyGuide: Identifiable {
@@ -236,11 +240,11 @@ struct RealtimeStrategyGuide: Identifiable {
               ], review: ["缺少完整分钟数据时，分时条件显示“待核验”，不会当作通过。", "“全天分时强于大盘”仍需人工核查，不用一个时点的涨幅替代。", "公告风险和流通股本变化仍需复核。"],
               interpretation: "“待分时核验”表示已满足基础量价条件，但七步法还没有全部确认。即使分时回踩通过，也仍须复核大盘分时和公告；规则匹配不等于盈利保证。",
               sourceName: "量化策略星 · 尾盘选股法", sourceURL: "https://www.xiaohongshu.com/explore/6a59eeac000000001102edb4"),
-        .init(id:"bottom_volume",summary:"交易日14:30，寻找近60日低位、累计成交量达到前5日日均量3倍以上的股票。",
+        .init(id:"bottom_volume",summary:"交易日14:30，寻找近60日低位、累计成交量达到前5日日均量2.5倍及以上，且当日上涨的股票。",
               conditions:["只在交易日14:30这一轮执行；14:45和14:50不重算、不覆盖这份结果。",
                           "最新价位于前60个完整交易日最低价上方0%–10%，不低于该历史低点。历史低价按前一交易日复权口径锚定。",
-                          "截至筛选时累计成交量 ÷ 前5个完整交易日的全天平均成交量 ≥3，成交量统一按股计算。",
-                          "不套用另外两策略的3%–5%涨幅限制，也不依赖指数或分时形态条件。",
+                          "截至筛选时累计成交量 ÷ 前5个完整交易日的全天平均成交量 ≥2.5，成交量统一按股计算。",
+                          "最新价高于前收盘价，当日涨幅严格大于0%；平盘及下跌排除。不设3%–5%涨幅区间，也不依赖指数或分时形态条件。",
                           "沪深非ST/退市标记股票，至少60根历史日线；前收与历史价格不连续、报价过时或缺数时排除。",
                           "显示全部命中数量，按放量倍数从高到低展示前10只；通知正文包含名称、代码和倍数。"],
               review:["低位不等于底部确认，放量也可能伴随抛压。","公告、减持、解禁和成交可得性仍需核查。"],

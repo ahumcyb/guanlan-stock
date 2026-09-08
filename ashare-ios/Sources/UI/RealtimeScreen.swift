@@ -53,9 +53,10 @@ struct RealtimeScreen: View {
                         if store.realtimeHistory.isEmpty { Text("暂无已保存轮次").foregroundStyle(.secondary) }
                     }
                 }
-                Section("14:30 · 底部放量3倍") {
+                Section("14:30 · 底部放量2.5倍上涨") {
                     if let report=store.realtime?.lastBottom,let bottom=report.bottomVolume {
                         Text("\(dateText(report.date)) · 命中 \(bottom.matchedCount) 只，展示 \(bottom.candidates.count) 只").font(.subheadline)
+                        Text(bottom.ruleLabel).font(.caption).foregroundStyle(.secondary)
                         ForEach(bottom.candidates) { candidate in NavigationLink { RealtimeCandidateDetail(candidate:candidate) } label: { HStack { Text(candidate.name);Spacer();Text(String(format:"%.2f 倍",candidate.volumeMultiple)).foregroundStyle(MobileTheme.teal) } } }
                         if bottom.candidates.isEmpty { Text("该轮已完成检查，0只候选").foregroundStyle(.secondary) }
                     } else { Text("尚无有效结果；下一交易日14:30检查，未记为0只。").foregroundStyle(.secondary) }
@@ -165,7 +166,8 @@ struct RealtimeHistoryDetail:View {
                         }
                     }
                     if let bottom=report.bottomVolume {
-                        Section("14:30 · 底部放量3倍") {
+                        Section("14:30 · 底部放量") {
+                            Text(bottom.ruleLabel).font(.caption).foregroundStyle(.secondary)
                             if bottom.complete {
                                 Text("命中 \(bottom.matchedCount) 只，按放量倍数展示前 \(bottom.candidates.count) 只").font(.subheadline)
                                 ForEach(bottom.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f 倍",row.volumeMultiple)) } } }
