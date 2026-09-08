@@ -181,3 +181,35 @@ def screen(features, quotes, index, now, expected_previous_date, minutes=None):
         results[key].sort(key=lambda r: (-r['volume_multiple'], abs(r['change'] - 4), r['ts_code']))
         results[key] = results[key][:10]
     return results
+
+
+def bottom_volume_screen(features,quotes,now,expected_previous_date):
+    """Low-zone volume observation, independent of index and 3%-5% change rules."""
+    matches=[];observed=[];now=now.astimezone(SHANGHAI)
+    for q in quotes:
+        code=q.get('ts_code');f=features.get(code)
+        if (not isinstance(code,str) or not CODE.fullmatch(code) or not f or f.get('date')!=expected_previous_date
+                or f.get('observations',0)<60 or f.get('adjusted') is not True):continue
+        if any('ST' in str(name).upper() or '退' in str(name) for name in [f.get('name',''),q.get('name','')]):continue
+        try:
+            close=finite(q['close'],True);previous=finite(q['pre_close'],True)
+            low=finite(f['low60'],True);reference=finite(f['last_close'],True)
+            volume=finite(q['vol'],True);average=finite(f['mean_volume5'],True)
+            quote_at=finite(q['quote_at']);change=finite(q['change']);vwap=finite(q['amount'],True)/volume
+            multiple=finite(volume/average,True)
+            if not -15<=now.timestamp()-quote_at<=MAX_AGE or local_now(quote_at).date()!=now.date():continue
+            if abs(previous/reference-1)>.003:continue
+            observed.append(quote_at);distance=close/low-1
+            if multiple<3-1e-8 or not -1e-8<=distance<=.10+1e-8:continue
+            finite(vwap,True);elapsed=trading_minutes(now)
+            matches.append(dict(strategy='bottom_volume',ts_code=code,name=str(f['name'])[:30],price=round(close,4),change=round(change,3),
+                quote_at=quote_at,time_basis=q.get('time_basis','trade_time'),reference_date=expected_previous_date,
+                volume_multiple=round(multiple,3),volume_ratio=round(multiple*240/elapsed,3) if elapsed else 0.,vwap=round(vwap,4),
+                low60=round(low,6),distance_low60=round(distance,6),state='低位放量观察',
+                checks=['现价在近60日最低价上方0%–10%','累计成交量≥前5日全天均量3倍'],
+                pending=['低位不等于底部确认，放量可能伴随抛压','公告、减持及解禁风险需核查']))
+        except (ValueError,TypeError,KeyError,ZeroDivisionError,OverflowError):continue
+    matches.sort(key=lambda row:(-row['volume_multiple'],row['distance_low60'],row['ts_code']))
+    return dict(status='ready' if matches else 'empty',lookback=60,matched_count=len(matches),candidates=matches[:10],
+                checked_at=now.timestamp(),oldest_quote_at=min(observed) if observed else now.timestamp(),
+                message='按放量倍数列出前10只；低位是近60个完整交易日最低价上方0%–10%。')

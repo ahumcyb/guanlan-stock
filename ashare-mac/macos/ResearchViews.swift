@@ -95,7 +95,22 @@ struct DataView:View {
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:22) {
-                pageTitle("数据管理",subtitle:store.remoteEnabled ? "从服务器同步完整行情，在 Mac 上执行选股。":"本地行情为基础，ProMax 补齐最近 120 个交易日的必要数据。")
+                pageTitle("数据管理",subtitle:store.publishedMode ? "四策略统一计算并校验发布，Mac 与手机读取同一版本。":"独立本地研究使用选定的数据目录。")
+                if store.publishedAPI != nil {
+                    Toggle("独立本地研究",isOn:Binding(get:{store.localResearch},set:{store.setLocalResearch($0)})).disabled(store.busy)
+                }
+                if store.publishedMode {
+                    Panel { VStack(alignment:.leading,spacing:14) {
+                        Text("统一发布结果").font(.headline)
+                        Text(store.serverStatus?.job.active==true ? store.serverStatus!.job.message:"后台优先交给 Mac 计算；仅在 Mac 失联后由服务器接管。切换策略直接读取结果。").font(.system(size:12)).foregroundStyle(Palette.muted)
+                        HStack {
+                            Button("同步最新结果") { Task { await store.synchronizePublished() } }
+                            Button("更新数据并选股") { store.run(update:true) }.buttonStyle(.borderedProminent)
+                            Button("重算四套策略") { store.run(update:false) }
+                        }.disabled(store.busy || store.serverStatus?.job.active==true)
+                        Text(store.favoritesMessage).font(.caption).foregroundStyle(Palette.muted)
+                    } }
+                } else {
                 if store.serverConfigured {
                     Picker("行情来源",selection:Binding(get:{store.remoteEnabled},set:{store.changeDataSource($0)})) {
                         Text("服务器 \(store.serverHost)").tag(true)
@@ -116,6 +131,7 @@ struct DataView:View {
                         }
                         Text(store.remoteEnabled ? "同步服务器已发布的五张数据表，全部校验通过后切换版本。服务器模式使用独立缓存；切回本地模式可以通过 ProMax 更新行情。":"自动检查交易日历、日线、复权因子、涨跌停价及股票列表。按日期校验后保存，可重试。新数据存放于独立目录，原始行情保持只读。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(4)
                     }
+                }
                 }
                 if let report=store.report {
                     Panel {
@@ -149,7 +165,7 @@ struct DataView:View {
                     Panel {
                         VStack(alignment:.leading,spacing:12) {
                             Text("使用边界").font(.system(size:14,weight:.semibold))
-                            ForEach(report.warnings,id:\.self) { warning in
+                            ForEach(report.warnings.filter{!$0.hasPrefix("行情落后交易日历")},id:\.self) { warning in
                                 HStack(alignment:.top,spacing:9) { Image(systemName:"info.circle").foregroundStyle(Palette.amber); Text(warning).lineSpacing(4) }.font(.system(size:11)).foregroundStyle(Palette.muted)
                             }
                         }

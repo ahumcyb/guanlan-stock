@@ -27,13 +27,18 @@ struct DailySummaryScreen:View {
                             Text(dateText(report.date)+" 收盘").font(.caption).foregroundStyle(.secondary)
                             Text(report.analysis.headline).font(.title2.weight(.semibold))
                         }.padding(.horizontal,4)
-                        marketCard(report.evidence)
+                        if let changes=report.evidence.marketChanges { changesCard(changes) }
                         performanceCard(report.evidence.performance)
                         analysisCard(report.analysis,showStrategy:report.evidence.performance != nil)
+                        if let changes=report.evidence.selectionChanges { selectionCard(changes) }
+                        DisclosureGroup("收盘量价与行业明细") {
+                        marketCard(report.evidence)
                         sectorsCard("相对较强行业",report.evidence.sectorsStrong)
                         sectorsCard("相对较弱行业",report.evidence.sectorsWeak)
-                        Text("本日新选 · 留待下一交易日评价").font(.headline).padding(.horizontal,4)
+                        }.padding(.horizontal,4)
+                        DisclosureGroup("本日新选 · 留待下一交易日评价") {
                         ForEach(report.evidence.strategies) { strategy in strategyCard(strategy) }
+                        }.padding(.horizontal,4)
                         ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
                         Text("生成于 \(dailyTime(report.generatedAt))。数据来自已核验的 ProMax 收盘行情；行业为成分股等权均值，非行业指数。AI 只作量价解读，未核验新闻或财务，不改变候选。")
                             .font(.caption).foregroundStyle(.secondary).lineSpacing(4).padding(.horizontal,4)
@@ -63,6 +68,34 @@ struct DailySummaryScreen:View {
             Text("平盘 \(evidence.market.unchanged) 只 · 涨跌中位数 \(dailyChange(evidence.market.medianChange))").font(.caption).foregroundStyle(.secondary)
             Text(evidence.universeLabel).font(.caption2).foregroundStyle(.secondary)
         } }
+    }
+    private func changesCard(_ changes:DailyMarketChanges)->some View {
+        ResearchCard { VStack(alignment:.leading,spacing:14) {
+            Text("相对 \(dateText(changes.previousDate)) 的变化").font(.headline)
+            HStack { Metric(label:"成交额变化",value:dailyChange(changes.turnoverChangePct));Metric(label:"上涨家数变化",value:String(format:"%+d",changes.advancersChange)) }
+            Text(String(format:"市场宽度变化 %+.2f 个百分点",changes.breadthChangePp)).font(.subheadline)
+            if !changes.enteredStrong.isEmpty { Text("进入行业涨幅前五："+changes.enteredStrong.joined(separator:"、")).font(.caption) }
+            Text("比较两个交易日的已核验横截面，不代表连续趋势。").font(.caption).foregroundStyle(.secondary)
+        } }
+    }
+    private func selectionCard(_ changes:[DailySelectionChange])->some View {
+        ResearchCard { VStack(alignment:.leading,spacing:16) {
+            Text("名单变化与条件复核").font(.headline)
+            ForEach(changes) { group in
+                VStack(alignment:.leading,spacing:8) {
+                    Text(group.name).font(.subheadline.weight(.semibold))
+                    if group.status=="unavailable" { Text("缺少此前精选，暂不比较名单。").font(.caption).foregroundStyle(.secondary) }
+                    else {
+                        Text(group.status=="new_strategy" ? "新启用策略 · 首次记录 \(group.added.count) 只":"新增 \(group.added.count) · 连续两期入选 \(group.retained.count) · 移出 \(group.removed.count)").font(.caption).foregroundStyle(.secondary)
+                        if !group.retained.isEmpty { Text("连续入选："+group.retained.map(\.name).joined(separator:"、")).font(.caption) }
+                        DisclosureGroup("查看变动依据") {
+                            if !group.added.isEmpty { Text("本期新选："+group.added.map(\.name).joined(separator:"、")).font(.caption).padding(.top,6) }
+                            ForEach(group.removed) { row in Text(row.name+" · "+(row.reason ?? "本期未进入精选")).font(.caption).foregroundStyle(.secondary).padding(.top,6) }
+                        }.font(.caption)
+                    }
+                }
+            }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
     }
     private func performanceCard(_ performance:DailyPerformance?)->some View {
         ResearchCard { VStack(alignment:.leading,spacing:16) {

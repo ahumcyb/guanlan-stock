@@ -19,6 +19,7 @@ struct RealtimeScreen: View {
                         LabeledContent("自动运行", value: state.settings.enabled ? "已开启 · 仅交易日" : "已暂停")
                         LabeledContent("手机推送", value: state.settings.barkConfigured && state.settings.notificationEnabled ? "Bark 已配置" : "尚未启用 Bark")
                         if let latest = state.latest {
+                            Text(latest.executionLabel).font(.subheadline.weight(.semibold))
                             Text(latest.message).font(.subheadline)
                             Text("最近检查 \(realtimeDate(latest.generatedAt)) · \(latest.executor == "mac" ? "Mac" : "服务器")")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -42,7 +43,24 @@ struct RealtimeScreen: View {
                         }
                     }
                 }
-                if let snapshot = store.realtime?.lastScreen {
+                Section("历史轮次") {
+                    DisclosureGroup("查看初筛、复核与最终结果") {
+                        ForEach(store.realtimeHistory) { run in
+                            Button { Task { await store.openRealtimeRun(run.slot) } } label: {
+                                VStack(alignment:.leading,spacing:5) { Text(run.label);Text(run.runState=="waiting" ? "等待策略时段":run.message).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                            }.buttonStyle(.plain)
+                        }
+                        if store.realtimeHistory.isEmpty { Text("暂无已保存轮次").foregroundStyle(.secondary) }
+                    }
+                }
+                Section("14:30 · 底部放量3倍") {
+                    if let report=store.realtime?.lastBottom,let bottom=report.bottomVolume {
+                        Text("\(dateText(report.date)) · 命中 \(bottom.matchedCount) 只，展示 \(bottom.candidates.count) 只").font(.subheadline)
+                        ForEach(bottom.candidates) { candidate in NavigationLink { RealtimeCandidateDetail(candidate:candidate) } label: { HStack { Text(candidate.name);Spacer();Text(String(format:"%.2f 倍",candidate.volumeMultiple)).foregroundStyle(MobileTheme.teal) } } }
+                        if bottom.candidates.isEmpty { Text("该轮已完成检查，0只候选").foregroundStyle(.secondary) }
+                    } else { Text("尚无有效结果；下一交易日14:30检查，未记为0只。").foregroundStyle(.secondary) }
+                }
+                if let snapshot = store.realtime?.lastScreen,snapshot.complete {
                     Section("最近尾盘检查 · \(dateText(snapshot.date))") {
                         Text(snapshot.message).font(.subheadline)
                         HStack {
@@ -56,7 +74,7 @@ struct RealtimeScreen: View {
                         Section(realtimeStrategy(strategy)) {
                             let candidates = snapshot.strategies[strategy] ?? []
                             if candidates.isEmpty {
-                                Text("本轮没有符合条件的候选").foregroundStyle(.secondary)
+                                Text("本轮已完成筛选，0 只候选").foregroundStyle(.secondary)
                             }
                             ForEach(candidates) { candidate in
                                 NavigationLink { RealtimeCandidateDetail(candidate: candidate) } label: {
@@ -80,7 +98,7 @@ struct RealtimeScreen: View {
                             Text("AI 仅解释已计算的规则，未核查全部新闻，不改变筛选结果。").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
-                }
+                } else { Section { Text("尚无完整筛选结果。等待策略时段与数据核验完成后，再展示候选数量。").foregroundStyle(.secondary) } }
                 if let reviews = store.realtime?.latest?.reviews, !reviews.isEmpty {
                     Section("昨日候选 · 早盘复查") {
                         ForEach(reviews) { row in
@@ -94,21 +112,72 @@ struct RealtimeScreen: View {
                 Section {
                     if store.realtime?.events.isEmpty != false { Text("首次运行后，提醒会保存在这里").foregroundStyle(.secondary) }
                     ForEach(store.realtime?.events ?? []) { event in
+                        Button { Task { await store.openReminder(event) } } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(event.title).font(.headline)
                             Text(event.body).font(.subheadline)
                             Text("\(realtimeDate(event.createdAt)) · \(event.deliveryLabel)").font(.caption).foregroundStyle(.secondary)
                         }.padding(.vertical, 4)
+                        }.buttonStyle(.plain)
                     }
                 } header: { Text("提醒记录") } footer: { Text("Bark 接受请求不等于手机已经展示通知；请用设置中的测试按钮验证。") }
             }
             .navigationTitle("实时提醒")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { store.realtimeSettingsPresented = true } label: { Image(systemName: "slider.horizontal.3").accessibilityLabel("实时提醒设置") } } }
             .refreshable { await store.refreshRealtime() }
-            .task { await store.refreshRealtime() }
+            .task { await store.refreshRealtime();await store.refreshRealtimeHistory() }
             .sheet(isPresented: $store.realtimeSettingsPresented) { RealtimeSettingsScreen() }
+            .sheet(isPresented:$store.realtimeDetailPresented,onDismiss:{store.closeRealtimeDetail()}) { RealtimeHistoryDetail() }
         }
         .id(store.realtimeNavigationRevision)
+    }
+}
+
+struct RealtimeHistoryDetail:View {
+    @EnvironmentObject var store:MobileStore
+    var body:some View {
+        NavigationStack {
+            List {
+                if let detail=store.realtimeEventDetail {
+                    Section("通知原文") { Text(detail.event.title).font(.headline);Text(detail.event.body);Text(realtimeDate(detail.event.createdAt)).font(.caption).foregroundStyle(.secondary) }
+                }
+                Section { Text(store.realtimeDetailMessage).font(.subheadline).foregroundStyle(.secondary) }
+                if let report=store.realtimeDetail {
+                    Section("固定轮次 · \(dateText(report.date))") {
+                        LabeledContent("检查轮次",value:realtimeSlot(report.slot))
+                        LabeledContent("执行结果",value:report.executionLabel)
+                        LabeledContent("完成时间",value:realtimeDate(report.generatedAt))
+                        Text(report.message)
+                    }
+                    ForEach(report.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
+                    if report.complete {
+                        ForEach(["overnight","golden"],id:\.self) { strategy in
+                            Section(realtimeStrategy(strategy)) {
+                                if let change=report.changes?[strategy] {
+                                    Text("较 \(realtimeSlot(change.previousSlot))：新增 \(change.added.count)、移出 \(change.removed.count)、保留 \(change.retainedCount)").font(.caption)
+                                    if !change.added.isEmpty { Text("新增："+change.added.map(\.name).joined(separator:"、")).font(.caption) }
+                                    if !change.removed.isEmpty { Text("移出："+change.removed.map(\.name).joined(separator:"、")).font(.caption).foregroundStyle(.secondary) }
+                                }
+                                let rows=report.strategies[strategy] ?? []
+                                if rows.isEmpty { Text("本轮已完成筛选，0 只候选").foregroundStyle(.secondary) }
+                                ForEach(rows) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f  %+.2f%%",row.price,row.change)).monospacedDigit() } } }
+                            }
+                        }
+                    }
+                    if let bottom=report.bottomVolume {
+                        Section("14:30 · 底部放量3倍") {
+                            if bottom.complete {
+                                Text("命中 \(bottom.matchedCount) 只，按放量倍数展示前 \(bottom.candidates.count) 只").font(.subheadline)
+                                ForEach(bottom.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f 倍",row.volumeMultiple)) } } }
+                                if bottom.candidates.isEmpty { Text("该轮已完成，0只候选").foregroundStyle(.secondary) }
+                            } else { Text(bottom.message).foregroundStyle(.secondary) }
+                        }
+                    }
+                    if !report.reviews.isEmpty { Section("复查记录") { ForEach(report.reviews) { row in Text(row.name+" · "+row.note) } } }
+                }
+            }.navigationTitle("原始结果").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("完成") { store.closeRealtimeDetail() } } }
+        }
     }
 }
 
@@ -134,9 +203,9 @@ struct RealtimeStrategyDetail: View {
             }
             Section("如何理解结果") { Text(guide.interpretation) }
             Section("股票与数据范围") { Text(RealtimeStrategyGuide.scope).font(.footnote) }
-            Section("参考来源") { Link(guide.sourceName, destination: URL(string: guide.sourceURL)!) }
+            Section("参考来源") { if let text=guide.sourceURL,let url=URL(string:text) { Link(guide.sourceName,destination:url) } else { Text(guide.sourceName) } }
         }
-        .navigationTitle(guide.id == "overnight" ? "一夜持股" : "黄金半小时")
+        .navigationTitle(realtimeStrategy(guide.id))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -157,6 +226,10 @@ struct RealtimeCandidateDetail: View {
                 LabeledContent("累计量 / 5日均量", value: String(format: "%.2f 倍", candidate.volumeMultiple))
                 LabeledContent("按交易分钟计算量比", value: String(format: "%.2f", candidate.volumeRatio))
                 LabeledContent("当日成交均价", value: String(format: "%.2f", candidate.vwap))
+                if let low=candidate.low60,let distance=candidate.distanceLow60 {
+                    LabeledContent("近60日最低价",value:decimal(low))
+                    LabeledContent("距离低价",value:percent(distance))
+                }
                 if let turnover = candidate.turnover { LabeledContent("换手率（估算）", value: String(format: "%.2f%%", turnover)) }
                 if let cap = candidate.marketCap { LabeledContent("流通市值（估算）", value: String(format: "%.1f 亿元", cap)) }
                 LabeledContent("历史 / 股本参考日", value: dateText(candidate.referenceDate))

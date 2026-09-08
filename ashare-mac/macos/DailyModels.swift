@@ -56,6 +56,11 @@ struct DailyReport:Codable {
             }
         }
         try evidence.performance?.validate(date:date)
+        try evidence.marketChanges?.validate(date:date)
+        if let changes=evidence.selectionChanges {
+            guard Set(changes.map(\.id))==Set(evidence.strategies.map(\.id)),changes.count==4 else { throw CocoaError(.fileReadCorruptFile) }
+            for change in changes { try change.validate(date:date) }
+        }
     }
 }
 struct DailyEvidence:Codable {
@@ -63,6 +68,32 @@ struct DailyEvidence:Codable {
     let market:DailyMarketFacts;let sectorsStrong:[DailySector];let sectorsWeak:[DailySector]
     let strategies:[DailyStrategyFacts];let warnings:[String]
     let performance:DailyPerformance?
+    let marketChanges:DailyMarketChanges?
+    let selectionChanges:[DailySelectionChange]?
+}
+
+struct DailyMarketChanges:Codable {
+    let previousDate:String;let stockCountBefore:Int;let stockCountAfter:Int
+    let turnoverYiBefore:Double;let turnoverYiAfter:Double;let turnoverChangePct:Double
+    let advancersChange:Int;let declinersChange:Int;let breadthChangePp:Double
+    let limitUpChange:Int;let limitDownChange:Int;let enteredStrong:[String];let leftStrong:[String]
+    func validate(date:String) throws {
+        guard validDailyDate(previousDate),previousDate<date,(1...10000).contains(stockCountBefore),(1...10000).contains(stockCountAfter),
+              turnoverYiBefore>0,turnoverYiAfter>=0,[turnoverYiBefore,turnoverYiAfter,turnoverChangePct,breadthChangePp].allSatisfy(\.isFinite),
+              abs((turnoverYiAfter/turnoverYiBefore-1)*100-turnoverChangePct)<0.001,enteredStrong.count<=5,leftStrong.count<=5 else { throw CocoaError(.fileReadCorruptFile) }
+    }
+}
+struct DailySelectionChange:Codable,Identifiable {
+    struct Item:Codable,Identifiable { let tsCode:String;let name:String;let reason:String?;var id:String{tsCode} }
+    let id:String;let name:String;let status:String;let previousDate:String?
+    let added:[Item];let retained:[Item];let removed:[Item]
+    func validate(date:String) throws {
+        guard ["available","new_strategy","unavailable"].contains(status),previousDate==nil || (validDailyDate(previousDate!) && previousDate!<date),
+              [added,retained,removed].allSatisfy({$0.count<=10 && Set($0.map(\.id)).count==$0.count && $0.allSatisfy{$0.name.count<=40 && ($0.reason?.count ?? 0)<=160}}),
+              Set(added.map(\.id)).isDisjoint(with:retained.map(\.id)),Set(removed.map(\.id)).isDisjoint(with:(added+retained).map(\.id)) else { throw CocoaError(.fileReadCorruptFile) }
+        if status=="unavailable" && !(added+retained+removed).isEmpty { throw CocoaError(.fileReadCorruptFile) }
+        if status=="new_strategy" && !(retained+removed).isEmpty { throw CocoaError(.fileReadCorruptFile) }
+    }
 }
 struct DailyMarketFacts:Codable {
     let stockCount:Int;let advancers:Int;let decliners:Int;let unchanged:Int;let turnoverYi:Double

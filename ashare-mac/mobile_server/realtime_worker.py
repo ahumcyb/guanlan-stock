@@ -12,21 +12,22 @@ import time
 from pathlib import Path
 
 from .artifacts import atomic_json
-from .mac_worker import WorkerClient, LostLease
+from .mac_worker import WorkerClient, LostLease,WorkerRequestError
 from .realtime import RealtimeStore
 
 
 STAGE_LABELS={'sync':'服务器行情同步','credentials':'行情凭据读取','history':'历史基准与流通股本准备',
               'quotes':'实时行情获取','index':'沪深300行情获取','minutes':'分钟行情获取',
-              'validation':'实时结果校验','runtime':'盘中计算'}
+              'validation':'实时结果校验','runtime':'盘中计算','publication':'结果提交与服务端校验'}
 
 
-def blocked_report(job,stage,code):
+def blocked_report(job,stage,code,computed_saved=False):
     stage=stage if stage in STAGE_LABELS else 'runtime'
     return dict(schema_version=1,date=job['date'],previous_date=job['previous_date'],generated_at=time.time(),
         kind=job['kind'],strategies={'overnight':[],'golden':[]},reviews=[],warnings=[],status='blocked',
-        failure_stage=stage,failure_code=code,
-        message=STAGE_LABELS[stage]+'未完成，本轮未生成候选；请查看运行记录后重试')
+        failure_stage=stage,failure_code=code,computed_result_saved=computed_saved,
+        message=(STAGE_LABELS[stage]+'未完成'+('（HTTP '+code[5:]+'）' if code.startswith('http_') else '')+
+                 (('；本机已保留这次结果，本轮未发布候选' if computed_saved else '；本轮未发布候选，请查看运行记录') if stage=='publication' else '，本轮未生成候选；请查看运行记录后重试')))
 
 
 def execute(market, cache, job, config=None, progress=None):
@@ -54,7 +55,7 @@ def execute(market, cache, job, config=None, progress=None):
                     try:process.wait(timeout=5)
                     except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
     from engine.intraday_runner import run
-    return run(market, cache, job['kind'], job.get('previous_candidates', []),progress=progress)
+    return run(market, cache, job['kind'], job.get('previous_candidates', []),progress=progress,slot_id=job.get('id'))
 
 
 def execute_report(market,cache,job,config=None):
@@ -88,7 +89,7 @@ def execute_report(market,cache,job,config=None):
 
 
 def run_job(claim, renew, publish, failure, market, cache, config_path=None):
-    stop = threading.Event();lost = threading.Event();process = None
+    stop = threading.Event();lost = threading.Event();process = None;stage='runtime';computed_saved=False
     def pulse():
         last = time.monotonic()
         while not stop.wait(15):
@@ -119,20 +120,28 @@ def run_job(claim, renew, publish, failure, market, cache, config_path=None):
                 raise ValueError('盘中计算未完成')
             if lost.is_set():
                 raise LostLease()
-            if not publish(claim['lease'], json.loads(result.read_text())):
+            report=json.loads(result.read_text())
+            try:
+                computed=Path(cache)/'computed';computed.mkdir(exist_ok=True,mode=0o700)
+                saved=computed/(hashlib.sha256(claim['id'].encode()).hexdigest()[:24]+'.json')
+                atomic_json(saved,report);saved.chmod(0o600);computed_saved=True
+                for old in sorted(computed.glob('*.json'),key=lambda p:p.stat().st_mtime)[:-30]:old.unlink()
+            except (OSError,ValueError):pass
+            stage='publication'
+            if not publish(claim['lease'], report):
                 raise LostLease()
             print('盘中结果已校验并同步', flush=True)
     except LostLease:
         print('盘中执行连接失效，丢弃迟到结果', flush=True)
     except Exception as error:
-        code='execution_timeout' if isinstance(error,TimeoutError) else 'worker_error'
+        code='http_'+str(error.status) if isinstance(error,WorkerRequestError) else ('execution_timeout' if isinstance(error,TimeoutError) else 'worker_error')
         try:
-            if not publish(claim['lease'],blocked_report(claim,'runtime',code)):
+            if not publish(claim['lease'],blocked_report(claim,stage,code,computed_saved)):
                 failure(claim['lease'])
         except Exception:
             try:failure(claim['lease'])
             except Exception:pass
-        print(json.dumps(dict(event='realtime_failed',slot=claim['id'],failure_code=code),ensure_ascii=False),flush=True)
+        print(json.dumps(dict(event='realtime_failed',slot=claim['id'],failure_stage=stage,failure_code=code),ensure_ascii=False),flush=True)
     finally:
         stop.set();thread.join(timeout=1)
         if process is not None and process.poll() is None:

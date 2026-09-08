@@ -7,6 +7,21 @@ from mobile_server.notifications import deepseek_daily_review
 
 
 class DailyAITests(unittest.TestCase):
+    def test_verified_differences_are_sent_for_explanation_without_today_pick_returns(self):
+        content=dict(headline='变化',market_view='成交额变化+5%。',sector_view='行业均值榜有变化。',strategy_view='昨日精选仍需观察。',watch_next='若条件再次满足，再观察。',risks=[])
+        evidence={'market_changes':{'previous_date':'20260904','turnover_change_pct':5.},
+                  'selection_changes':[{'id':'leaders','added':[],'retained':[{'ts_code':'000001.SZ','name':'例子'}],'removed':[]}],
+                  'strategies':[{'id':'leaders','name':'趋势','shortlist_count':1,'picks':[{'change':99.}]}]}
+        with patch('mobile_server.notifications.build_opener') as factory:
+            factory.return_value.open.return_value=Response({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(content)}}]})
+            self.assertEqual(deepseek_daily_review('test-key-not-production','deepseek-v4-flash',evidence)['status'],'ready')
+            request=factory.return_value.open.call_args[0][0]
+            payload=json.loads(request.data);data=json.loads(payload['messages'][1]['content'])
+            self.assertEqual(data['market_changes']['turnover_change_pct'],5.)
+            self.assertEqual(data['selection_changes'][0]['retained'][0]['ts_code'],'000001.SZ')
+            self.assertTrue(data['available_data']['historical_turnover'])
+            self.assertNotIn('picks',data['current_shortlists'][0])
+
     def test_single_day_turnover_does_not_support_flow_valuation_or_history_claims(self):
         content=dict(headline='收盘复盘',market_view='涨跌分化',sector_view='行业表现分化',
                      strategy_view='候选仍需观察',watch_next='若下一交易日上涨家数增加，再观察行情改善是否持续。',risks=[])

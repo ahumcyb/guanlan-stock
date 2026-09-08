@@ -7,6 +7,7 @@ struct WorkspaceView:View {
     @State private var query=""
     @State private var filter="精选"
     @State private var order="匹配分"
+    @State private var showStatistics=false
     private var filtered:[Stock] {
         let text=query.trimmingCharacters(in:.whitespacesAndNewlines)
         var rows=(store.report?.stocks ?? []).filter { stock in
@@ -49,7 +50,7 @@ struct WorkspaceView:View {
         .onAppear { if !filtered.contains(where:{$0.id==store.selection}) { store.select(filtered.first?.id) } }
     }
     private var overview:some View {
-        VStack(alignment:.leading,spacing:20) {
+        VStack(alignment:.leading,spacing:14) {
             HStack(alignment:.top) {
                 VStack(alignment:.leading,spacing:6) {
                     Text(favoritesOnly ? "我的观察":"短线工作台").font(.system(size:24,weight:.semibold))
@@ -69,6 +70,16 @@ struct WorkspaceView:View {
                 }.pickerStyle(.segmented).font(.system(size:11)).disabled(store.busy)
             }
             if let report=store.report {
+                if !favoritesOnly {
+                    HStack(spacing:16) {
+                        Metric(label:"最新候选",value:"\(report.shortlistCount) 只",note:dateText(report.asOf))
+                        let performance=store.dailyState?.latest?.evidence.performance
+                        let result=performance?.strategies.first(where:{$0.id==store.strategy})
+                        Metric(label:"最近精选观察",value:result?.meanReturnPct.map(dailyChange) ?? "—",note:performance.map{dateText($0.evaluationDate)+" · 未计成本"} ?? "等待核验")
+                        Metric(label:"下次尾盘检查",value:store.realtimeState?.settings.enabled==false ? "已暂停":(dailyTime(store.serverStatus?.marketStatus?.nextScreenAt).components(separatedBy:" ").last ?? "—"),note:store.realtimeState?.settings.enabled==false ? "可在实时提醒开启":String(dailyTime(store.serverStatus?.marketStatus?.nextScreenAt).prefix(5))+" · Mac 优先")
+                    }
+                } else { Text(store.favoritesMessage).font(.system(size:11)).foregroundStyle(Palette.muted) }
+                DisclosureGroup("股票池与规则概况",isExpanded:$showStatistics) {
                 HStack(spacing:15) {
                     Metric(label:"有效股票池",value:report.eligibleCount.formatted(),note:"\(report.universeCount.formatted()) 只当日行情")
                     Metric(label:report.conditionLabel ? "符合条件":"转强确认",value:String(report.confirmedCount),note:report.isMomentum60 ? "精选最多 5 只":"精选最多 10 只")
@@ -79,15 +90,18 @@ struct WorkspaceView:View {
                 } else if report.isLeft {
                     Text(LeftReboundGuide.summary+" 市场宽度门槛为 20%。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(3)
                 }
-                if report.staleSessions>0 || report.missingAdjustmentToday>0 || report.missingLimitsToday>0 {
+                }.font(.system(size:11)).foregroundStyle(Palette.muted)
+                Text(store.serverStatus?.marketStatus?.label(report.asOf) ?? "日线截至 \(dateText(report.asOf)) · 完整日期待核验")
+                    .font(.system(size:11)).foregroundStyle(store.serverStatus?.marketStatus?.needsUpdate(report.asOf)==true ? Palette.amber:Palette.muted)
+                if report.missingAdjustmentToday>0 || report.missingLimitsToday>0 {
                     HStack(alignment:.top,spacing:7) {
                         Image(systemName:"info.circle")
-                        Text(report.staleSessions>0 ? "行情截至 \(dateText(report.asOf))，落后 \(report.staleSessions) 个交易日。点击右上角更新数据。":"复权或涨跌停价有缺口，近期结果仅作观察。")
+                        Text("复权或涨跌停价有缺口，近期结果仅作观察。")
                     }.font(.system(size:10)).foregroundStyle(Palette.amber).padding(10)
                         .frame(maxWidth:.infinity,alignment:.leading).background(Palette.amber.opacity(0.07),in:RoundedRectangle(cornerRadius:5))
                 }
             }
-        }.padding(24)
+        }.padding(20)
     }
     private var controls:some View {
         VStack(spacing:13) {

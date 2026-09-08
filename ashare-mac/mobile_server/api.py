@@ -16,7 +16,10 @@ from .artifacts import STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPOR
 from .queue import JobQueue,canonical_uuid
 from .realtime import RealtimeStore
 from .daily import DailyStore
+from .watchlist import WatchlistStore
 from engine.close_proof import valid_date
+from engine.market_clock import market_status
+from engine.intraday import local_now
 
 
 class Failure(Exception):
@@ -67,6 +70,12 @@ class Service:
         parsed=urlsplit(target)
         if parsed.query or '%' in parsed.path or '..' in parsed.path:raise Failure(400,'INVALID_PATH','请求路径无效')
         parts=parsed.path.strip('/').split('/')
+        if parts==['v1','watchlist']:
+            store=WatchlistStore(self.root)
+            if method=='GET':return 200,store.public()
+            if method=='POST':
+                try:return 200,store.apply(json.loads(body))
+                except (ValueError,TypeError,KeyError):raise Failure(400,'INVALID_WATCHLIST','自选操作无效，请重新同步后重试')
         if parts[:2]==['v1','daily']:
             if method=='GET' and len(parts)==2:return 200,self.daily.public()
             if method=='GET' and len(parts)==3:
@@ -88,6 +97,13 @@ class Service:
             action = parts[3:] if realtime_worker else parts[2:]
             if method == 'GET' and action in [[], ['state']]:
                 return 200,self.realtime.public()
+            if realtime_phone and method=='GET':
+                try:
+                    if action==['history']:return 200,{'schema_version':1,'runs':self.realtime.history()}
+                    if len(action)==2 and action[0]=='runs':return 200,self.realtime.run(action[1])
+                    if len(action)==2 and action[0]=='events':return 200,self.realtime.event_detail(action[1])
+                except (FileNotFoundError,OSError):raise Failure(404,'NOT_FOUND','这条历史记录暂不可读取')
+                except (ValueError,KeyError,TypeError):raise Failure(400,'INVALID_HISTORY','历史记录没有通过校验')
             if method == 'POST':
                 try:
                     value=json.loads(body)
@@ -132,7 +148,8 @@ class Service:
                 try:available[strategy]=current_manifest(self.root,strategy)
                 except (OSError,ValueError,KeyError):pass
             return 200,dict(schema_version=1,job=self.state(),worker_online=online,mac_online=self.queue.mac_online(),
-                can_refresh=online and info.get('can_refresh',False),reports=available)
+                can_refresh=online and info.get('can_refresh',False),reports=available,
+                market_status=market_status(self.realtime.calendar(),local_now()))
         if method=='POST' and parts==['v1','jobs']:
             try:value=json.loads(body)
             except (ValueError,UnicodeError):raise Failure(400,'INVALID_BODY','任务参数无效')

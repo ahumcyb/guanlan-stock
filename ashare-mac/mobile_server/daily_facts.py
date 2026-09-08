@@ -39,6 +39,11 @@ def collect_evidence(root, market_current, date, now):
     header=json.loads(checked_file(market,market/'manifest.json',65536).read_text())
     if header.get('revision')!=revision:raise ValueError('复盘行情版本不一致')
     frames=verify_package_close(market,date,receipt.get('close_attestation'),datetime.fromtimestamp(now,ZONE))
+    from .daily_performance import collect_previous_performance
+    from .daily_changes import market_changes,selection_changes,removal_reason
+    performance=collect_previous_performance(root,market,date,frames)
+    prior_codes={group['id']:{row['ts_code'] for row in group['rows']} for group in performance.get('strategies',[])}
+    reviews={}
     quotes=frames['daily'].set_index('ts_code')
     daily_codes=set(frames['daily'].ts_code);universe=None;strategies=[];breadth=None;metadata_warning=False
     ids=STRATEGIES if (research/'left_rebound/manifest.json').exists() else HISTORICAL_STRATEGIES
@@ -84,6 +89,8 @@ def collect_evidence(root, market_current, date, now):
             if type(report.get(name)) is not int or not 0<=report[name]<=10000:raise ValueError('复盘策略计数无效')
         if report['confirmed_count']<len(picks):raise ValueError('复盘确认数量不足')
         threshold=report.get('market_filter_threshold',None if strategy=='momentum_60' else .4)
+        reviews[strategy]={stock['ts_code']:removal_reason(stock,date,quotes.loc[stock['ts_code']] if stock['ts_code'] in daily_codes else None,
+            threshold,report.get('breadth',0)) for stock in stocks if stock['ts_code'] in prior_codes.get(strategy,set())}
         strategies.append(dict(id=strategy,name=short_text(report.get('strategy_name'),40),
             shortlist_count=len(picks),confirmed_count=report['confirmed_count'],watching_count=report['watching_count'],picks=picks,
             market_filter_applies=threshold is not None,market_filter_threshold=threshold,
@@ -120,14 +127,15 @@ def collect_evidence(root, market_current, date, now):
     if market_stats['limits_unclassified']:
         warnings.append('涨跌停仅按有效限制价统计，未设限或缺失限制价的股票不纳入。')
     from .selection_snapshots import save_snapshot
-    from .daily_performance import collect_previous_performance
     try:save_snapshot(root,date,generation,revision,strategies,receipt.get('published_at'))
     except (OSError,ValueError,KeyError,TypeError):
         warnings.append('本日精选快照未能冻结，后续结算须等待可验证的历史版本。')
-    performance=collect_previous_performance(root,market,date,frames)
+    strong=sorted(sectors,key=lambda x:(-x['mean_change'],x['name']))[:5]
     return dict(date=date,generation=generation,data_revision=revision,
         fetched_at=receipt['close_attestation']['fetched_at'],
         universe_label='沪深 A 股个股日线，含 ST；不含 ETF、北交所和指数',
-        market=market_stats,sectors_strong=sorted(sectors,key=lambda x:(-x['mean_change'],x['name']))[:5],
+        market=market_stats,sectors_strong=strong,
         sectors_weak=sorted(sectors,key=lambda x:(x['mean_change'],x['name']))[:5],
-        strategies=strategies,performance=performance,warnings=warnings)
+        strategies=strategies,performance=performance,warnings=warnings,
+        market_changes=market_changes(root,performance.get('signal_date'),market_stats,strong),
+        selection_changes=selection_changes(strategies,performance,reviews))

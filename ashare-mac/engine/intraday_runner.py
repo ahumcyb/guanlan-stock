@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 import pandas as pd
 
 from .data import atomic_json, combine, source_paths, full_market_dates, minimum_market_rows, validate
-from .intraday import CODE, local_now, normalize_quote, screen
+from .intraday import CODE, local_now, normalize_quote, screen,bottom_volume_screen
 from .provider import BASE_URL, NoRedirect, ProMax, parse_response
 from .sina_quotes import fetch_quotes as sina_quotes
 
@@ -191,7 +191,7 @@ def features_for(root, cache, provider, now=None):
     target = cache / ('features-' + date + '.json')
     if target.exists():
         value = json.loads(target.read_text())
-        if value.get('schema_version') == 2 and value.get('source_version') == version and value.get('previous') == previous and not value.get('warnings'):
+        if value.get('schema_version') == 3 and value.get('source_version') == version and value.get('previous') == previous and not value.get('warnings'):
             return value
     start = (now - timedelta(days=180)).strftime('%Y%m%d')
     tables = {}
@@ -246,6 +246,7 @@ def features_for(root, cache, provider, now=None):
             continue
         prices = group.close * group.adj_factor / group.iloc[-1].adj_factor
         highs = group.high * group.adj_factor / group.iloc[-1].adj_factor
+        lows = group.low * group.adj_factor / group.iloc[-1].adj_factor
         mean_volume = float(group.vol.tail(5).mean()) * 100  # daily lots -> shares
         if mean_volume <= 0:
             continue
@@ -254,10 +255,10 @@ def features_for(root, cache, provider, now=None):
             sum4=float(prices.tail(4).sum()), sum9=float(prices.tail(9).sum()), sum19=float(prices.tail(19).sum()),
             ma5=float(prices.tail(5).mean()), platform_high=float(highs.tail(10).max()),
             platform_range=float(prices.tail(10).max() / prices.tail(10).min()), mean_volume5=mean_volume,
-            float_shares=floating if math.isfinite(floating) and floating > 0 else 0)
+            low60=float(lows.min()),float_shares=floating if math.isfinite(floating) and floating > 0 else 0)
     if len(features) < 3500:
         raise ValueError('历史特征可用股票不足3500只')
-    value = dict(schema_version=2, date=date, previous=previous, source_version=version, open_dates=days, features=features, warnings=warning)
+    value = dict(schema_version=3, date=date, previous=previous, source_version=version, open_dates=days, features=features, warnings=warning)
     atomic_json(target, value)
     # Features are tiny, still keep bounded retention.
     for old in sorted(cache.glob('features-*.json'))[:-10]:
@@ -265,7 +266,7 @@ def features_for(root, cache, provider, now=None):
     return value
 
 
-def run(root, cache, kind='screen', previous_candidates=None, provider=None, progress=None):
+def _run(root, cache, kind='screen', previous_candidates=None, provider=None, progress=None,slot_id=None):
     root = root.resolve()
     progress=progress or (lambda stage:None)
     progress('credentials')
@@ -283,7 +284,7 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None, pro
         report['message'] = '盘中历史特征与参考股本已准备'
         return report
     if kind == 'screen' and not '1430' <= now.strftime('%H%M') < '1453':
-        report.update(status='blocked', message='当前不在14:30–14:50策略时段，已准备历史特征；等待交易日定时执行')
+        report.update(status='blocked',run_state='waiting',message='当前不在14:30–14:50策略时段，已准备历史特征；等待交易日定时执行')
         return report
     codes = sorted(value['features']) if kind == 'screen' else sorted({r['ts_code'] for r in (previous_candidates or [])})
     if not codes:
@@ -323,14 +324,25 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None, pro
                 change=round(change, 3), quote_at=q['quote_at'], note='跌幅达到2%观察线' if change <= -2 else ('涨幅达到3%观察线' if change >= 3 else '距10:00检查截止')))
         report['message'] = '昨日候选早盘复查；参考价是筛选快照，并非持仓成本'
         return report
+    if slot_id==report['date']+'-1430':
+        baseline=sum(type(f.get('low60')) in [int,float] and math.isfinite(f['low60']) and f['low60']>0 for f in value['features'].values())
+        if baseline<len(value['features'])*.90:
+            report['bottom_volume']=dict(status='blocked',lookback=60,matched_count=0,candidates=[],checked_at=local_now().timestamp(),
+                oldest_quote_at=min(q['quote_at'] for q in quotes),message='近60日低价历史基准未齐，底部放量未执行。')
+        else:report['bottom_volume']=bottom_volume_screen(value['features'],quotes,local_now(),value['previous'])
     progress('index')
-    index_raw=provider.index_quote()
+    try:
+        index_raw=provider.index_quote()
+        index=normalize_quote(index_raw,local_now(),index=True) if index_raw is not None else None
+    except Exception as error:
+        index_raw=None;index=None;report['index_failure_type']=type(error).__name__[:80]
     report['index_diagnostics']=getattr(provider,'index_diagnostics',{})
     if index_raw is None:
         report.update(status='blocked',failure_code='index_unavailable',failure_stage='index',
                       message='沪深300主源与备用报价均未通过时间/数值校验，本轮停止筛选')
+        if (report.get('bottom_volume') or {}).get('status') in ['ready','empty']:
+            report['message']='沪深300报价未通过校验，原两套策略暂停；底部放量已独立完成检查。'
         return report
-    index=normalize_quote(index_raw,local_now(),index=True)
     report['index_source']=index_raw.get('quote_source','promax')
     if report['index_source']=='sina':report['warnings'].append('沪深300使用新浪备用报价的源站交易时间。')
     report['index_change'] = round(index['change'], 3);report['index_quote_at'] = index['quote_at']
@@ -361,4 +373,15 @@ def run(root, cache, kind='screen', previous_candidates=None, provider=None, pro
     report['generated_at'] = finished.timestamp()
     report['warnings'] = sorted(set(report['warnings']))
     report['message'] = '实时规则筛选完成' if index['change'] >= -.3 else '沪深300弱于−0.3%，一夜持股暂停；七步法需核查大盘分时'
+    return report
+
+
+def run(root,cache,kind='screen',previous_candidates=None,provider=None,progress=None,slot_id=None):
+    report=_run(root,cache,kind,previous_candidates,provider,progress,slot_id)
+    bottom=report.get('bottom_volume')
+    if bottom is not None:
+        finished=local_now();report['generated_at']=finished.timestamp()
+        if finished.timestamp()-bottom['oldest_quote_at']>180:
+            report['bottom_volume']=dict(status='blocked',lookback=60,matched_count=0,candidates=[],
+                checked_at=finished.timestamp(),oldest_quote_at=bottom['oldest_quote_at'],message='行情在后续采集期间过时，底部放量结果未发布。')
     return report

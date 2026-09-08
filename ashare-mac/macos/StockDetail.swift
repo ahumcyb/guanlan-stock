@@ -28,7 +28,7 @@ struct StockDetail: View {
                     Text("复权或限制价尚有缺口，更新后再核对。").font(.system(size:11)).foregroundStyle(Palette.amber)
                 }
                 if let error=store.chartError { Text(error).font(.caption).foregroundStyle(Palette.amber) }
-                else { StockChart(candles:store.candles).id(stock.id) }
+                else { StockChart(candles:store.candles,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation).id(stock.id) }
                 Divider()
                 HStack {
                     Text(store.report?.isMomentum60==true ? "动量条件与排序":"条件匹配").font(.system(size:13,weight:.semibold))

@@ -100,3 +100,25 @@ class RealtimePipelineTests(unittest.TestCase):
              patch('mobile_server.realtime_worker.subprocess.Popen') as download:
             self.assertEqual(realtime_worker.execute(self.root,self.root,job,config),{'status':'ready'})
             download.assert_not_called();compute.assert_called_once()
+
+    def test_gateway_rejection_is_publication_failure_and_keeps_computed_result(self):
+        from mobile_server.mac_worker import WorkerRequestError
+        job=dict(id='20260907-1445',date='20260907',previous_date='20260904',kind='screen',lease='private-lease-value')
+        ready=dict(schema_version=1,date=job['date'],previous_date=job['previous_date'],kind='screen',generated_at=NOW.timestamp(),
+                   status='ready',strategies={'overnight':[],'golden':[]},reviews=[],warnings=[],message='计算完成')
+        class Finished:
+            returncode=0
+            def __init__(self,arguments,**kwargs):Path(arguments[arguments.index('--result')+1]).write_text(json.dumps(ready))
+            def poll(self):return 0
+        calls=[]
+        def publish(lease,report):
+            calls.append(report)
+            if report['status']=='ready':raise WorkerRequestError(413)
+            return True
+        with patch('mobile_server.realtime_worker.subprocess.Popen',side_effect=Finished):
+            realtime_worker.run_job(job,lambda _:True,publish,lambda _:True,self.root,self.root)
+        self.assertEqual(calls[-1]['failure_stage'],'publication')
+        self.assertEqual(calls[-1]['failure_code'],'http_413')
+        saved=list((self.root/'computed').glob('*.json'));self.assertEqual(len(saved),1)
+        self.assertEqual(json.loads(saved[0].read_text()),ready)
+        self.assertNotIn(job['lease'],saved[0].read_text())

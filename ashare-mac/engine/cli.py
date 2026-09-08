@@ -107,8 +107,10 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
         backtest = study(signals, factors, limits, market_dates)
         now = datetime.now(ZoneInfo('Asia/Shanghai'))
-        expected = sorted(calendar.loc[(calendar.is_open==1) & (calendar.cal_date<=now.strftime('%Y%m%d')),'cal_date'].astype(str))
-        stale_sessions = len([d for d in expected if d>asof])
+        from .market_clock import market_status
+        opened=calendar.loc[calendar.is_open==1,'cal_date'].astype(str).tolist()
+        expected_as_of=market_status(opened,now)['expected_as_of']
+        stale_sessions=sum(asof<d<=expected_as_of for d in opened) if expected_as_of else 0
         missing_adj = len(set(latest.ts_code)-set(factors.loc[factors.trade_date==asof,'ts_code']))
         missing_limit = len(set(latest.ts_code)-set(limits.loc[limits.trade_date==asof,'ts_code']))
         warnings = ['历史股票名单与 ST 状态缺少逐日快照，存在幸存者偏差；当前行业也用于历史分组。',

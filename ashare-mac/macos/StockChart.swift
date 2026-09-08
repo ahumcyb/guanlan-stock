@@ -2,6 +2,10 @@ import SwiftUI
 
 struct StockChart:View {
     let candles:[Candle]
+    let signalDate:String
+    let signalLabel:String
+    let reference:Double?
+    let invalidation:Double?
     @State private var count=60
     @State private var hover: Int?
     private var visible:[Candle] { Array(candles.suffix(count)) }
@@ -33,7 +37,12 @@ struct StockChart:View {
                         } else { hover=nil }
                     }
             }.frame(height:215)
-                .accessibilityLabel("\(visible.count) 个交易日日 K 线，包含 MA10、MA20、MA60 和成交量")
+                .accessibilityLabel("\(visible.count) 个交易日日 K 线，包含均线、成交量、\(signalLabel)日期、位置参考与失效参考")
+            HStack(spacing:10) {
+                Text("\(signalLabel) \(dateText(signalDate))");Spacer()
+                Text("参考 \(decimal(reference))").foregroundStyle(.blue)
+                Text("失效 \(decimal(invalidation))").foregroundStyle(Palette.amber)
+            }.font(.system(size:9)).foregroundStyle(Palette.muted)
             if let bar = hover.flatMap({ visible.indices.contains($0) ? visible[$0] : nil }) ?? visible.last {
                 HStack(spacing:8) {
                     Text(dateText(bar.date))
@@ -47,7 +56,9 @@ struct StockChart:View {
     private func draw(context:GraphicsContext,size:CGSize,bars:[Candle]) {
         guard !bars.isEmpty else { return }
         let chartWidth=size.width-42, chartHeight=size.height-52
-        let values=bars.flatMap { [$0.high,$0.low,$0.ma20 ?? $0.close,$0.ma60 ?? $0.close] }
+        let markers:[Double]=[reference,invalidation].compactMap{$0}.filter{$0.isFinite && $0>0}
+        let barValues:[Double]=bars.flatMap { bar in [bar.high,bar.low,bar.ma20 ?? bar.close,bar.ma60 ?? bar.close] }
+        let values=barValues+markers
         let minimum=(values.min() ?? 0)*0.99, maximum=(values.max() ?? 1)*1.01
         let span=max(maximum-minimum,0.01), step=chartWidth/Double(bars.count)
         func y(_ p:Double)->Double { 6+(maximum-p)/span*(chartHeight-12) }
@@ -77,6 +88,18 @@ struct StockChart:View {
                 }
             }
             context.stroke(path,with:.color(color),lineWidth:1)
+        }
+        for (value,color) in [(reference,Color.blue),(invalidation,Palette.amber)] {
+            if let value,value.isFinite,value>0 {
+                var line=Path();line.move(to:CGPoint(x:0,y:y(value)));line.addLine(to:CGPoint(x:chartWidth,y:y(value)))
+                context.stroke(line,with:.color(color.opacity(0.8)),style:StrokeStyle(lineWidth:1,dash:[5,3]))
+            }
+        }
+        if let index=bars.firstIndex(where:{$0.date==signalDate}) {
+            let x=step*(Double(index)+0.5)
+            var marker=Path();marker.move(to:CGPoint(x:x,y:4));marker.addLine(to:CGPoint(x:x,y:chartHeight))
+            context.stroke(marker,with:.color(Palette.ink.opacity(0.55)),style:StrokeStyle(lineWidth:1,dash:[2,3]))
+            context.draw(Text(signalLabel).font(.system(size:9,weight:.semibold)),at:CGPoint(x:max(45,x-3),y:5),anchor:.topTrailing)
         }
         context.draw(Text(String(bars.first!.date.suffix(4))).font(.system(size:8)).foregroundStyle(Palette.muted),at:CGPoint(x:0,y:size.height-2),anchor:.leading)
         context.draw(Text(String(bars.last!.date.suffix(4))).font(.system(size:8)).foregroundStyle(Palette.muted),at:CGPoint(x:chartWidth,y:size.height-2),anchor:.trailing)

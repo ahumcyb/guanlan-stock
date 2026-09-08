@@ -39,6 +39,7 @@ import SwiftUI
 }
 
 struct DailySummaryView:View {
+    var initialDate:String?=nil
     @EnvironmentObject var app:AppStore
     @StateObject private var store=DailyDesktopStore()
     @State private var selectedDate=""
@@ -78,15 +79,20 @@ struct DailySummaryView:View {
                         Spacer();Badge(text:dateText(report.date))
                         Badge(text:report.analysis.status=="ready" ? "DeepSeek 解读":(report.analysis.status=="pending" ? "分析中":"量价摘要"),color:report.analysis.status=="ready" ? Palette.teal:Palette.amber)
                     }
-                    marketPanel(report.evidence)
+                    if let changes=report.evidence.marketChanges { changesPanel(changes) }
                     performancePanel(report.evidence.performance)
                     analysisPanel(report.analysis,showStrategy:report.evidence.performance != nil)
+                    if let changes=report.evidence.selectionChanges { selectionPanel(changes) }
+                    DisclosureGroup("收盘量价与行业明细") {
+                    marketPanel(report.evidence)
                     HStack(alignment:.top,spacing:16) {
                         sectorPanel("相对较强行业",rows:report.evidence.sectorsStrong)
                         sectorPanel("相对较弱行业",rows:report.evidence.sectorsWeak)
                     }
-                    Text("本日新选 · 留待下一交易日评价").font(.headline)
+                    }
+                    DisclosureGroup("本日新选 · 留待下一交易日评价") {
                     ForEach(report.evidence.strategies) { strategy in strategyPanel(strategy) }
+                    }
                     ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.system(size:11)).foregroundStyle(Palette.amber) }
                     Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的 ProMax 收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
                 } else {
@@ -95,6 +101,7 @@ struct DailySummaryView:View {
             }.padding(30)
         }
         .task {
+            if let initialDate { selectedDate=initialDate }
             await refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for:.seconds(20)) } catch { return }
@@ -142,6 +149,37 @@ struct DailySummaryView:View {
                 Text("平盘 \(evidence.market.unchanged) 只 · 涨跌幅中位数 \(dailyChange(evidence.market.medianChange)) · \(evidence.universeLabel)").font(.system(size:11)).foregroundStyle(Palette.muted)
             }
         }
+    }
+    private func changesPanel(_ changes:DailyMarketChanges)->some View {
+        Panel { VStack(alignment:.leading,spacing:14) {
+            Text("相对 \(dateText(changes.previousDate)) 的变化").font(.headline)
+            HStack {
+                Metric(label:"成交额变化",value:dailyChange(changes.turnoverChangePct))
+                Metric(label:"上涨家数变化",value:String(format:"%+d",changes.advancersChange))
+                Metric(label:"市场宽度变化",value:String(format:"%+.2f 个百分点",changes.breadthChangePp))
+            }
+            if !changes.enteredStrong.isEmpty { Text("进入行业涨幅前五："+changes.enteredStrong.joined(separator:"、")).font(.system(size:12)) }
+            Text("比较两个交易日的已核验横截面，不代表连续趋势。").font(.caption).foregroundStyle(Palette.muted)
+        } }
+    }
+    private func selectionPanel(_ changes:[DailySelectionChange])->some View {
+        Panel { VStack(alignment:.leading,spacing:16) {
+            Text("名单变化与条件复核").font(.headline)
+            ForEach(changes) { group in
+                VStack(alignment:.leading,spacing:8) {
+                    Text(group.name).font(.system(size:13,weight:.semibold))
+                    if group.status=="unavailable" { Text("缺少可验证的此前精选，暂不比较名单。").font(.caption).foregroundStyle(Palette.muted) }
+                    else {
+                        Text(group.status=="new_strategy" ? "新启用策略 · 首次记录 \(group.added.count) 只":"新增 \(group.added.count) · 连续两期入选 \(group.retained.count) · 移出 \(group.removed.count)").font(.system(size:12)).foregroundStyle(Palette.muted)
+                        if !group.retained.isEmpty { Text("连续入选："+group.retained.map(\.name).joined(separator:"、")).font(.system(size:12)) }
+                        DisclosureGroup("查看变动依据") {
+                            if !group.added.isEmpty { Text("本期新选："+group.added.map(\.name).joined(separator:"、")).font(.system(size:12)).padding(.top,6) }
+                            ForEach(group.removed) { row in Text(row.name+" · "+(row.reason ?? "本期未进入精选")).font(.system(size:12)).foregroundStyle(Palette.muted).padding(.top,6) }
+                        }.font(.caption)
+                    }
+                }
+            }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
     }
     private func performancePanel(_ performance:DailyPerformance?)->some View {
         Panel { VStack(alignment:.leading,spacing:16) {

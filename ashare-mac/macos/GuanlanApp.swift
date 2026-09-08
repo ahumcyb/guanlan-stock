@@ -22,7 +22,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
         .commands {
             CommandGroup(replacing:.newItem) {}
             CommandMenu("研究") {
-                Button("重新选股") { store.run(update:false) }.keyboardShortcut("r").disabled(store.busy)
+                Button(store.publishedMode ? "同步结果":"重新选股") { if store.publishedMode { Task { await store.synchronizePublished() } } else { store.run(update:false) } }.keyboardShortcut("r").disabled(store.busy)
                 Button("更新数据") { store.run(update:true) }.keyboardShortcut("u").disabled(store.busy)
                 Divider()
                 Button("查看报告目录") { store.revealReport() }
@@ -55,7 +55,7 @@ struct RootView:View {
                     if store.report == nil && page != "数据管理" && page != "策略说明" && page != "实时提醒" && page != "收盘总结" {
                         EmptyViewMessage(icon:store.busy ? "waveform.path":"externaldrive.badge.questionmark",
                             title:store.busy ? "正在准备你的选股工作台":"尚未载入日线数据",
-                            message:store.busy ? store.progress:"前往数据管理选择行情目录，或点击重新选股。")
+                            message:store.busy ? store.progress:(store.publishedMode ? "正在读取同版本四策略结果；可到数据管理同步或检查连接。":"前往数据管理选择行情目录，或点击重新选股。"))
                     } else {
                         switch page {
                         case "实时提醒": RealtimeView()
@@ -97,7 +97,7 @@ struct RootView:View {
             Spacer()
             VStack(alignment:.leading,spacing:9) {
                 Rectangle().fill(Palette.line).frame(height:1).padding(.bottom,6)
-                HStack(spacing:6) { Circle().fill(Palette.teal).frame(width:5,height:5); Text("本机研究引擎").font(.system(size:10)) }
+                HStack(spacing:6) { Circle().fill(Palette.teal).frame(width:5,height:5); Text(store.publishedMode ? "Mac 优先 · 两端同版":"独立本地研究").font(.system(size:10)) }
                 Text("短线 1–5 日\n让每个判断都有依据。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(6)
                 Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")  /  Apple Silicon").font(.system(size:8,design:.monospaced)).foregroundStyle(Palette.muted.opacity(0.7)).padding(.top,8)
             }.padding(24)
@@ -108,14 +108,14 @@ struct RootView:View {
             Text(page).font(.system(size:12,weight:.medium))
             Spacer()
             if let report=store.report, page != "实时提醒" && page != "收盘总结" {
-                HStack(spacing:5) { Circle().fill(report.staleSessions==0 ? Palette.teal:Palette.amber).frame(width:5,height:5); Text("\(dateText(report.asOf)) 收盘") }
+                HStack(spacing:5) { Circle().fill(store.serverStatus?.marketStatus?.needsUpdate(report.asOf)==true ? Palette.amber:Palette.teal).frame(width:5,height:5); Text("\(dateText(report.asOf)) 收盘") }
                     .font(.system(size:11)).foregroundStyle(Palette.muted)
             }
             if page == "实时提醒" || page == "收盘总结" { Text("北京时间 · 交易日自动执行").font(.system(size:11)).foregroundStyle(Palette.muted) }
             else {
-            Button { store.run(update:false) } label: { Label("重新选股",systemImage:"arrow.clockwise") }
+            Button { if store.publishedMode { Task { await store.synchronizePublished() } } else { store.run(update:false) } } label: { Label(store.publishedMode ? "同步结果":"重新选股",systemImage:"arrow.clockwise") }
                 .controlSize(.small).disabled(store.busy)
-            Button { store.run(update:true) } label: { Label(store.remoteEnabled ? "同步服务器":"更新数据",systemImage:"arrow.down.to.line") }
+            Button { store.run(update:true) } label: { Label("更新数据",systemImage:"arrow.down.to.line") }
                 .buttonStyle(.borderedProminent).tint(Palette.teal).controlSize(.small).disabled(store.busy)
             }
         }.padding(.horizontal,24).frame(height:62)
@@ -126,7 +126,7 @@ struct RootView:View {
             else { Image(systemName:"checkmark.circle").foregroundStyle(Palette.teal) }
             Text(page == "收盘总结" && !store.busy ? "收盘总结以页内交易日与生成时间为准":(page == "实时提醒" && !store.busy ? "实时结果以各条行情的时间为准":store.progress)).lineLimit(1)
             Spacer()
-            if store.busy { Button("取消") { store.cancel() }.buttonStyle(.plain) }
+            if store.busy && !store.publishedMode { Button("取消") { store.cancel() }.buttonStyle(.plain) }
             Text("仅供研究 · 匹配分不代表胜率").foregroundStyle(Palette.muted)
         }.font(.system(size:9)).foregroundStyle(Palette.muted).padding(.horizontal,18).frame(height:31)
     }

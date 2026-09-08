@@ -49,6 +49,29 @@ import Foundation
         for strategy in cachedStrategies {
             let saved=try cache.load(strategy);assert(saved?.report.strategyId==strategy)
         }
+        if cachedStrategies.contains("left_rebound") {
+            var manifests:[String:MobileManifest]=[:];var reports:[String:Data]=[:]
+            for strategy in AfterCloseStrategies.ids {
+                let folder=fixture.appendingPathComponent(strategy)
+                manifests[strategy]=try mobileDecoder().decode(MobileManifest.self,from:Data(contentsOf:folder.appendingPathComponent("manifest.json")))
+                reports[strategy]=try Data(contentsOf:folder.appendingPathComponent("report.json"))
+            }
+            try cache.saveBundle(reports,manifests:manifests)
+            reports["left_rebound"]!.append(32)
+            do { try cache.saveBundle(reports,manifests:manifests);assertionFailure("Partial invalid bundle replaced complete cache") } catch {}
+            for strategy in AfterCloseStrategies.ids {
+                let saved=try cache.load(strategy);assert(saved?.manifest==manifests[strategy])
+            }
+            reports["left_rebound"]!.removeLast()
+            for index in 1...3 {
+                let generation="20260908T12000\(index)-aaaaa\(index)"
+                let next=manifests.mapValues { m in MobileManifest(schemaVersion:m.schemaVersion,generation:generation,strategy:m.strategy,asOf:m.asOf,reportBytes:m.reportBytes,reportSha256:m.reportSha256,stockCount:m.stockCount,dataRevision:m.dataRevision) }
+                try cache.saveBundle(reports,manifests:next)
+            }
+            let retained=try FileManager.default.contentsOfDirectory(at:temporary,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.hasSuffix("-report.json")}
+            assert(retained.count<=9)
+            print("Atomic four-strategy cache and invalid-bundle preservation passed")
+        }
         do { _=try cache.chartURL(manifest,code:"../../secret");assertionFailure("Traversal was accepted") } catch {}
         let code=(report.stocks.first(where:{$0.rank==1}) ?? report.stocks[0]).id
         let chart=try Data(contentsOf:fixture.appendingPathComponent("charts/\(code).json"))

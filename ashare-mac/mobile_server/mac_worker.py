@@ -20,6 +20,12 @@ from .queue import canonical_uuid,closing_arguments
 class LostLease(Exception):pass
 
 
+class WorkerRequestError(ValueError):
+    def __init__(self,status):
+        self.status=status
+        super().__init__('Worker request returned HTTP '+str(status))
+
+
 class WorkerClient:
     def __init__(self,config):
         if config['endpoint']!='https://106.14.125.189' or not re.fullmatch('[a-f0-9]{64}',config['token']):raise ValueError('Invalid worker connection')
@@ -40,7 +46,8 @@ class WorkerClient:
             limit=2*1024*1024 if path.startswith(('/v1/worker/realtime/','/v1/realtime')) else (128*1024 if path.startswith('/v1/daily') else 65536)
             response=connection.getresponse();body=response.read(limit+1)
             if response.status==409:raise LostLease()
-            if response.status not in (200,202) or len(body)>limit:raise ValueError('Worker request failed')
+            if response.status not in (200,202):raise WorkerRequestError(response.status)
+            if len(body)>limit:raise ValueError('Worker response exceeded its size limit')
             return json.loads(body)
         finally:connection.close()
 

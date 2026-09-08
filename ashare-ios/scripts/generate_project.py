@@ -46,7 +46,7 @@ for name in ['Debug','Release']:
         'SWIFT_OPTIMIZATION_LEVEL':'-Onone' if name=='Debug' else '-O','SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG' if name=='Debug' else '',
         'SDKROOT':'iphoneos','SUPPORTED_PLATFORMS':'iphoneos iphonesimulator','TARGETED_DEVICE_FAMILY':'1,2',
         'INFOPLIST_FILE':'Info.plist','GENERATE_INFOPLIST_FILE':'NO','CODE_SIGN_STYLE':'Automatic','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
-        'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CURRENT_PROJECT_VERSION':'7','MARKETING_VERSION':'1.5.0',
+        'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CURRENT_PROJECT_VERSION':'8','MARKETING_VERSION':'1.6.0',
         'ENABLE_USER_SCRIPT_SANDBOXING':'YES','SWIFT_STRICT_CONCURRENCY':'minimal'}
     if team_match:settings['DEVELOPMENT_TEAM']=team_match[1]
     target_configs.append(add('Target '+name,'XCBuildConfiguration',name=name,buildSettings=settings))
@@ -58,13 +58,14 @@ folder=ROOT/'Guanlan.xcodeproj';folder.mkdir(exist_ok=True)
 (folder/'project.pbxproj').write_text('// !$*UTF8*$!\n'+encode(dict(archiveVersion=1,classes={},objectVersion=56,objects=objects,rootObject=project))+'\n')
 schemes=folder/'xcshareddata/xcschemes';schemes.mkdir(parents=True,exist_ok=True)
 reference=f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{target}" BuildableName="Guanlan.app" BlueprintName="Guanlan" ReferencedContainer="container:Guanlan.xcodeproj"/>'
-(schemes/'Guanlan.xcscheme').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
+scheme_text=f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="2660" version="1.3">
 <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{reference}</BuildActionEntry></BuildActionEntries></BuildAction>
 <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="NO"><BuildableProductRunnable runnableDebuggingMode="0">{reference}</BuildableProductRunnable></LaunchAction>
 <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">{reference}</BuildableProductRunnable></ProfileAction>
 <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
-</Scheme>''')
+</Scheme>'''
+if not (schemes/'Guanlan.xcscheme').exists():(schemes/'Guanlan.xcscheme').write_text(scheme_text)
 info=dict(CFBundleDevelopmentRegion='zh-Hans',CFBundleDisplayName='观澜选股',CFBundleName='Guanlan',CFBundleExecutable='$(EXECUTABLE_NAME)',CFBundleIdentifier='$(PRODUCT_BUNDLE_IDENTIFIER)',CFBundlePackageType='APPL',CFBundleShortVersionString='$(MARKETING_VERSION)',CFBundleVersion='$(CURRENT_PROJECT_VERSION)',LSRequiresIPhoneOS=True,UIApplicationSceneManifest={'UIApplicationSupportsMultipleScenes':False},UILaunchScreen={},UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'],**{'UISupportedInterfaceOrientations~ipad':['UIInterfaceOrientationPortrait','UIInterfaceOrientationPortraitUpsideDown','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight']})
 info['UTExportedTypeDeclarations']=[{'UTTypeIdentifier':'local.guanlan.connection','UTTypeDescription':'观澜服务器连接','UTTypeConformsTo':['public.json'],'UTTypeTagSpecification':{'public.filename-extension':['guanlan']}}]
 info['CFBundleDocumentTypes']=[{'CFBundleTypeName':'观澜连接','CFBundleTypeRole':'Viewer','LSHandlerRank':'Owner','LSItemContentTypes':['local.guanlan.connection']}]

@@ -2,6 +2,10 @@ import SwiftUI
 
 struct MobileCandleChart:View {
     let candles:[Candle]
+    let signalDate:String
+    let signalLabel:String
+    let reference:Double?
+    let invalidation:Double?
     @State private var count=60
     @State private var selected:Int?
     private var bars:[Candle] { Array(candles.suffix(count)) }
@@ -14,6 +18,7 @@ struct MobileCandleChart:View {
                     .contentShape(Rectangle())
                     .simultaneousGesture(DragGesture(minimumDistance:0).onChanged { value in selected=max(0,min(bars.count-1,Int(value.location.x/max(1,geometry.size.width-44)*Double(bars.count)))) })
             }.frame(height:240).accessibilityLabel("\(bars.count) 个交易日日 K、均线和成交量；下方显示选中日期价格")
+            HStack { Text("\(signalLabel) \(dateText(signalDate))");Spacer();Text("参考 \(decimal(reference))").foregroundStyle(.blue);Text("失效 \(decimal(invalidation))").foregroundStyle(MobileTheme.amber) }.font(.caption2).foregroundStyle(.secondary)
             if let bar=selected.flatMap({bars.indices.contains($0) ? bars[$0]:nil}) ?? bars.last {
                 VStack(alignment:.leading,spacing:5) {
                     Text(dateText(bar.date)).font(.caption.weight(.medium))
@@ -25,7 +30,9 @@ struct MobileCandleChart:View {
     private func draw(_ context:GraphicsContext,size:CGSize) {
         guard !bars.isEmpty else { return }
         let width=max(1,size.width-44),height=size.height-48
-        let values=bars.flatMap{[$0.high,$0.low,$0.ma10 ?? $0.close,$0.ma20 ?? $0.close,$0.ma60 ?? $0.close]}
+        let markers:[Double]=[reference,invalidation].compactMap{$0}.filter{$0.isFinite && $0>0}
+        let barValues:[Double]=bars.flatMap { bar in [bar.high,bar.low,bar.ma10 ?? bar.close,bar.ma20 ?? bar.close,bar.ma60 ?? bar.close] }
+        let values=barValues+markers
         let low=(values.min() ?? 0)*0.99,high=(values.max() ?? 1)*1.01,span=max(0.01,high-low),step=width/Double(bars.count)
         func y(_ price:Double)->Double { 6+(high-price)/span*(height-12) }
         for index in 0...3 {
@@ -48,6 +55,18 @@ struct MobileCandleChart:View {
             var line=Path();var started=false
             for (index,bar) in bars.enumerated() { if let value=bar[keyPath:key] { let point=CGPoint(x:step*(Double(index)+0.5),y:y(value));if started { line.addLine(to:point) } else { line.move(to:point);started=true } } }
             context.stroke(line,with:.color(color),lineWidth:1)
+        }
+        for (value,color) in [(reference,Color.blue),(invalidation,MobileTheme.amber)] {
+            if let value,value.isFinite,value>0 {
+                var line=Path();line.move(to:CGPoint(x:0,y:y(value)));line.addLine(to:CGPoint(x:width,y:y(value)))
+                context.stroke(line,with:.color(color.opacity(0.8)),style:StrokeStyle(lineWidth:1,dash:[5,3]))
+            }
+        }
+        if let index=bars.firstIndex(where:{$0.date==signalDate}) {
+            let x=step*(Double(index)+0.5)
+            var marker=Path();marker.move(to:CGPoint(x:x,y:4));marker.addLine(to:CGPoint(x:x,y:height))
+            context.stroke(marker,with:.color(.secondary),style:StrokeStyle(lineWidth:1,dash:[2,3]))
+            context.draw(Text(signalLabel).font(.system(size:10,weight:.semibold)),at:CGPoint(x:max(48,x-3),y:4),anchor:.topTrailing)
         }
         if let selected,bars.indices.contains(selected) {
             let x=step*(Double(selected)+0.5);var line=Path();line.move(to:CGPoint(x:x,y:0));line.addLine(to:CGPoint(x:x,y:size.height))

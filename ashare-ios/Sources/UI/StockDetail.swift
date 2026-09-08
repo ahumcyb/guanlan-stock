@@ -17,7 +17,7 @@ struct MobileStockDetail:View {
                     }
                 }
                 ResearchCard {
-                    if !candles.isEmpty { MobileCandleChart(candles:candles) }
+                    if !candles.isEmpty { MobileCandleChart(candles:candles,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation) }
                     else if let chartError { VStack(alignment:.leading,spacing:12) { Text(chartError).font(.subheadline).foregroundStyle(.secondary);Button("重试 K 线") { Task { await load() } } } }
                     else { ProgressView("正在读取 K 线…").frame(maxWidth:.infinity,minHeight:220) }
                 }

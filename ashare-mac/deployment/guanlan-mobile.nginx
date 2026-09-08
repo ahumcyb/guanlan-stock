@@ -17,6 +17,14 @@ server {
     gzip on;
     gzip_types application/json;
     gzip_min_length 1024;
+    location = /v1/worker/realtime/publish {
+        client_max_body_size 256k;
+        proxy_pass http://127.0.0.1:8787;
+        proxy_read_timeout 35s;
+        proxy_send_timeout 15s;
+        proxy_set_header Host $host;
+        proxy_set_header Connection close;
+    }
     location /v1/worker/uploads/ {
         client_max_body_size 256m;
         client_body_timeout 180s;

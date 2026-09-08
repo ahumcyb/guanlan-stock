@@ -18,6 +18,16 @@ import UniformTypeIdentifiers
     @Published var historyLog = ""
     @Published var strategy: String
     @Published var remoteEnabled: Bool
+    @Published var localResearch=false
+    @Published var serverStatus:ServerStatus?
+    @Published var dailyState:DailyState?
+    @Published var realtimeState:RealtimeState?
+    @Published var favoritesMessage="自选等待同步"
+    var publishedAPI:MobileAPI?
+    var publishedSnapshot:CachedSnapshot?
+    var favoriteReplica:WatchlistReplica?
+    let publishedCache:OfflineCache
+    var publishedMode:Bool { !localResearch && publishedAPI != nil }
     let runtime: Runtime
     let output: URL
     let overlay: URL
@@ -46,13 +56,25 @@ import UniformTypeIdentifiers
         } else { runtime = fallback }
         output = URL(fileURLWithPath: runtime.projectRoot).appendingPathComponent(".cache/analysis")
         overlay = URL(fileURLWithPath: runtime.projectRoot).appendingPathComponent("data")
+        let base=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first!
+        publishedCache=OfflineCache(root:base.appendingPathComponent("GuanlanPublished"))
         dataRoot = UserDefaults.standard.string(forKey: "dataRoot")
             ?? URL(fileURLWithPath: runtime.projectRoot).deletingLastPathComponent().appendingPathComponent("data").path
         favorites = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
         strategy = AfterCloseStrategies.activeChoice(UserDefaults.standard.string(forKey:"strategy"))
         remoteEnabled = UserDefaults.standard.object(forKey:"useServerData") as? Bool
             ?? FileManager.default.fileExists(atPath:runtime.projectRoot+"/settings/server.json")
-        if !loadReport() { run(update:remoteEnabled) }
+        localResearch=UserDefaults.standard.bool(forKey:"independentLocalResearch")
+        do {
+            let config=URL(fileURLWithPath:runtime.projectRoot).appendingPathComponent("settings/mobile-viewer.json")
+            if FileManager.default.fileExists(atPath:config.path) {
+                publishedAPI=try MobileAPI(JSONDecoder().decode(Pairing.self,from:Data(contentsOf:config)))
+            }
+            favoriteReplica=try WatchlistReplica(file:base.appendingPathComponent("GuanlanWatchlist/state.json"),legacy:favorites)
+            favorites=favoriteReplica!.codes
+        } catch { self.error="连接或自选缓存未通过校验，原有记录已保留。" }
+        if publishedMode { _=loadPublishedReport();Task { await watchPublishedState() } }
+        else { if !loadReport() { run(update:remoteEnabled) };Task { await watchPublishedState() } }
     }
 
     @discardableResult func loadReport() -> Bool {
@@ -84,6 +106,7 @@ import UniformTypeIdentifiers
 
     func loadChart() {
         candles = []; chartError = nil
+        if publishedMode { Task { await loadPublishedChart() };return }
         guard let code = selection, let folder = generation else { return }
         guard code.range(of: #"^\d{6}\.(SH|SZ|BJ)$"#, options: .regularExpression) != nil else { return }
         do { candles = try decoder.decode([Candle].self, from: Data(contentsOf: folder.appendingPathComponent("charts/\(code).json"))) }
@@ -91,12 +114,14 @@ import UniformTypeIdentifiers
     }
 
     func toggleFavorite(_ stock: Stock) {
-        if favorites.contains(stock.id) { favorites.remove(stock.id) } else { favorites.insert(stock.id) }
-        UserDefaults.standard.set(Array(favorites).sorted(), forKey: "favorites")
+        guard let favoriteReplica else { favoritesMessage="自选缓存暂不可写入，请先检查本机记录";return }
+        do { try favoriteReplica.toggle(stock.id);favorites=favoriteReplica.codes;favoritesMessage=favoriteReplica.message;Task { await syncFavorites() } }
+        catch { favoritesMessage=error.localizedDescription }
     }
 
     func run(update: Bool) {
         guard !busy else { return }
+        if publishedMode { Task { await submitPublishedJob(update ? "refresh":"recompute") };return }
         error = nil; cancelled = false; busy = true; historyLog = ""
         let missingCache=remoteEnabled && !FileManager.default.fileExists(atPath:activeDataRoot+"/manifest.json")
         launch(module:(update || missingCache) ? (remoteEnabled ? "engine.remote":"engine.update"):"engine.cli")
@@ -150,7 +175,7 @@ import UniformTypeIdentifiers
 
     func cancel() { cancelled = true; process?.terminate() }
 
-    func retry() { run(update:activity != "选股计算") }
+    func retry() { if publishedMode { Task { await synchronizePublished() } } else { run(update:activity != "选股计算") } }
 
     func changeDataSource(_ useServer:Bool) {
         guard !busy, useServer != remoteEnabled else { return }
@@ -163,6 +188,7 @@ import UniformTypeIdentifiers
     func changeStrategy(_ value:String) {
         guard !busy, AfterCloseStrategies.ids.contains(value), value != strategy else { return }
         strategy=value; UserDefaults.standard.set(value,forKey:"strategy")
+        if publishedMode { _=loadPublishedReport();Task { await synchronizePublished() };return }
         run(update:false)
     }
 
@@ -194,6 +220,7 @@ import UniformTypeIdentifiers
     }
 
     func revealReport() {
+        if publishedMode { NSWorkspace.shared.selectFile(nil,inFileViewerRootedAtPath:publishedCache.root.path);return }
         guard let folder=generation else { return }
         NSWorkspace.shared.activateFileViewerSelecting([folder.appendingPathComponent("report.json")])
     }

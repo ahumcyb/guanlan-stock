@@ -5,32 +5,40 @@ import Foundation
     @Published var state: RealtimeState?
     @Published var busy = false
     @Published var message = "连接实时策略服务…"
-    func request(_ action: String, runtime: Runtime, values: [String: Any] = [:]) async {
-        guard !busy else { return }
-        busy = true;defer { busy = false }
+    @Published var history:[RealtimeRunSummary]=[]
+    @Published var detail:RealtimeSnapshot?
+    @Published var eventDetail:RealtimeEventDetail?
+    private var api:MobileAPI?
+    func request(_ action:String,runtime:Runtime,values:[String:Any]=[:]) async {
+        guard !busy else { return };busy=true;defer{busy=false}
         do {
-            let input = try JSONSerialization.data(withJSONObject: values)
-            let data = try await Task.detached(priority: .utility) {
-                let process = Process();let output = Pipe();let source = Pipe()
-                process.executableURL = URL(fileURLWithPath: runtime.python)
-                process.currentDirectoryURL = URL(fileURLWithPath: runtime.projectRoot)
-                process.arguments = ["-m", "mobile_server.realtime_control", "--config", runtime.projectRoot + "/settings/mobile-viewer.json", action]
-                process.standardOutput = output;process.standardError = FileHandle.nullDevice;process.standardInput = source
-                try process.run()
-                source.fileHandleForWriting.write(input);try source.fileHandleForWriting.close()
-                let data = output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
-                guard process.terminationStatus == 0, data.count <= 2 * 1024 * 1024 else { throw CocoaError(.fileReadUnknown) }
-                return data
-            }.value
-            if action == "state" {
-                let decoder = JSONDecoder();decoder.keyDecodingStrategy = .convertFromSnakeCase
-                let value = try decoder.decode(RealtimeState.self, from: data)
-                guard value.schemaVersion == 1 else { throw CocoaError(.fileReadCorruptFile) }
-                state = value;message = "已同步服务器的实时策略与提醒记录"
-            } else {
-                message = action == "settings" ? "设置已保存" : (action == "test" ? "测试通知已提交，请在 iPhone 查看 Bark" : "行情检查已提交，优先由 Mac 执行")
+            if api==nil {
+                let file=URL(fileURLWithPath:runtime.projectRoot).appendingPathComponent("settings/mobile-viewer.json")
+                api=try MobileAPI(JSONDecoder().decode(Pairing.self,from:Data(contentsOf:file)))
             }
-        } catch { message = "实时服务暂不可用，请检查 Mac 节点和服务器连接。" }
+            guard let api else { return }
+            if action=="state" {
+                let value=try mobileDecoder().decode(RealtimeState.self,from:await api.request("/v1/realtime",limit:2*1024*1024))
+                guard value.schemaVersion==1 else { throw MobileFailure.invalidData };state=value
+                let records=try mobileDecoder().decode(RealtimeHistory.self,from:await api.request("/v1/realtime/history",limit:128*1024))
+                guard records.schemaVersion==1,records.runs.count<=90 else { throw MobileFailure.invalidData }
+                history=records.runs;message="已同步实时状态与原始轮次"
+            } else if action=="run",let slot=values["slot"] as? String,validRealtimeSlot(slot) {
+                detail=nil
+                let value=try mobileDecoder().decode(RealtimeSnapshot.self,from:await api.request("/v1/realtime/runs/"+slot,limit:256*1024))
+                try value.validateArchive(slot);detail=value;message="已载入固定轮次"
+            } else if action=="event",let id=values["id"] as? String,UUID(uuidString:id) != nil {
+                eventDetail=nil
+                let value=try mobileDecoder().decode(RealtimeEventDetail.self,from:await api.request("/v1/realtime/events/"+id,limit:256*1024))
+                guard value.event.id==id else { throw MobileFailure.invalidData }
+                guard value.report==nil || value.event.runId==value.report?.slot else { throw MobileFailure.invalidData }
+                try value.report?.validateArchive(value.event.runId);eventDetail=value;message=value.message
+            } else if ["settings","scan","test"].contains(action) {
+                let body=try JSONSerialization.data(withJSONObject:values)
+                _=try await api.request("/v1/realtime/"+action,method:"POST",body:body,limit:65536)
+                message=action=="settings" ? "设置已保存":(action=="test" ? "测试通知已提交":"行情检查已提交，优先由 Mac 执行")
+            } else { throw MobileFailure.invalidData }
+        } catch { message="这次读取或操作未完成，已保留现有记录，请稍后重试。" }
     }
 }
 
@@ -44,6 +52,13 @@ struct RealtimeView: View {
     @State private var bark = ""
     @State private var deepseek = ""
     @State private var showSettings = false
+    @State private var selectedSlot=""
+    @State private var showEvent=false
+    private var displayed:RealtimeSnapshot? { selectedSlot.isEmpty ? store.state?.lastScreen:(store.detail?.slot==selectedSlot ? store.detail:nil) }
+    private var eventDailyDate:String? {
+        guard let text=store.eventDetail?.event.url,let url=URL(string:text),let target=notificationTarget(url),case .daily(let date)=target else { return nil }
+        return date
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -67,12 +82,13 @@ struct RealtimeView: View {
                     Text(store.state?.settings.enabled == true ? "自动运行已开启" : "自动运行已暂停")
                 }.font(.system(size: 12)).foregroundStyle(Palette.teal)
                 Text(store.message).font(.system(size: 11)).foregroundStyle(Palette.muted)
-                DisclosureGroup("两种选股策略如何筛选") { RealtimeStrategyDescriptions().padding(.top, 12) }
+                DisclosureGroup("三套选股策略如何筛选") { RealtimeStrategyDescriptions().padding(.top, 12) }
                 if showSettings { settings }
                 if let latest = store.state?.latest {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(latest.message).font(.headline)
+                            Text(latest.executionLabel).font(.headline)
+                            Text(latest.message).font(.system(size:12))
                             Text("最近检查 \(realtimeDate(latest.generatedAt)) · \(latest.executor == "mac" ? "Mac" : "服务器")")
                                 .font(.caption).foregroundStyle(Palette.muted)
                             ForEach(latest.reviews) { r in
@@ -81,17 +97,28 @@ struct RealtimeView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                     }
                 }
-                if let report = store.state?.lastScreen {
+                Picker("查看轮次",selection:$selectedSlot) {
+                    Text("最近完整筛选").tag("")
+                    ForEach(store.history) { run in Text(run.label).tag(run.slot) }
+                }.frame(maxWidth:460).disabled(store.busy)
+                if selectedSlot.isEmpty {
+                    GroupBox("14:30 · 底部放量3倍") {
+                        if let report=store.state?.lastBottom { bottomSection(report).padding(12) }
+                        else { Text("下一交易日14:30开始检查。尚无这套策略的完整结果，未记为0只。").font(.system(size:12)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }
+                    }
+                }
+                if let report = displayed {
                     HStack {
-                        Text("最近尾盘结果 · \(dateText(report.date))").font(.headline)
+                        Text("\(dateText(report.date)) · \(realtimeSlot(report.slot)) · \(report.executionLabel)").font(.headline)
                         Spacer()
                         Text("新鲜行情 \(report.freshCount ?? 0) / \(report.universeCount ?? 0)").font(.caption).foregroundStyle(Palette.muted)
                     }
                     ForEach(report.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(Palette.amber) }
-                    HStack(alignment: .top, spacing: 18) {
+                    if report.complete { HStack(alignment: .top, spacing: 18) {
                         candidateColumn(report, "overnight")
                         candidateColumn(report, "golden")
-                    }
+                    } } else { Text(report.message).font(.system(size:13)).foregroundStyle(Palette.muted) }
+                    if !selectedSlot.isEmpty,report.bottomVolume != nil { bottomSection(report) }
                     if let analysis = report.ai {
                         GroupBox("DeepSeek · 可选解读") {
                             VStack(alignment: .leading, spacing: 8) {
@@ -101,16 +128,18 @@ struct RealtimeView: View {
                         }
                     }
                 } else {
-                    Text("交易日定时执行后，将显示两套策略的行情时间、候选与待核验条件。").padding(28).frame(maxWidth: .infinity).background(Palette.selected, in: RoundedRectangle(cornerRadius: 12))
+                    Text(selectedSlot.isEmpty ? "尚无完整筛选结果。等待策略时段与数据核验完成后，再展示候选数量。":(store.busy ? "正在读取所选历史轮次…":"所选轮次暂不可读取，请稍后重试；未用最新结果替代。")).padding(28).frame(maxWidth: .infinity).background(Palette.selected, in: RoundedRectangle(cornerRadius: 12))
                 }
                 Text("提醒记录").font(.headline)
                 ForEach(store.state?.events ?? []) { e in
+                    Button { Task { await store.request("event",runtime:app.runtime,values:["id":e.id]);showEvent=true } } label: {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack { Text(e.title).font(.headline);Spacer();Text(e.deliveryLabel).foregroundStyle(Palette.muted) }
                         Text(e.body).font(.system(size: 12))
                         Text(realtimeDate(e.createdAt)).font(.caption).foregroundStyle(Palette.muted)
                         Divider()
                     }
+                    }.buttonStyle(.plain).disabled(store.busy)
                 }
                 Text("仅供研究。分时和公告未核验的条件会明确标示。筛选完成后手机收到查看提醒；Bark 已接受不等于手机已经展示通知。")
                     .font(.caption).foregroundStyle(Palette.muted)
@@ -122,17 +151,46 @@ struct RealtimeView: View {
                 do { try await Task.sleep(for: .seconds(15)) } catch { return }
             }
         }
+        .onChange(of:selectedSlot) { _,slot in if !slot.isEmpty { Task { await store.request("run",runtime:app.runtime,values:["slot":slot]) } } }
+        .sheet(isPresented:$showEvent) {
+            VStack(alignment:.leading,spacing:16) {
+                HStack { Text("通知对应的原始结果").font(.title2);Spacer();Button("完成") { showEvent=false } }
+                if let date=eventDailyDate { DailySummaryView(initialDate:date).environmentObject(app) }
+                else {
+                ScrollView { VStack(alignment:.leading,spacing:16) {
+                    if let detail=store.eventDetail {
+                        Text(detail.event.title).font(.headline);Text(detail.event.body)
+                        Text(realtimeDate(detail.event.createdAt)).font(.caption).foregroundStyle(Palette.muted)
+                        Text(detail.message).font(.caption).foregroundStyle(Palette.muted)
+                        if let report=detail.report {
+                            Text("\(dateText(report.date)) · \(realtimeSlot(report.slot)) · \(report.executionLabel)").font(.headline)
+                            if report.complete { HStack(alignment:.top,spacing:18) { candidateColumn(report,"overnight");candidateColumn(report,"golden") } }
+                            else { Text(report.message) }
+                            if report.bottomVolume != nil { bottomSection(report) }
+                        }
+                    } else { Text(store.message) }
+                }.frame(maxWidth:.infinity,alignment:.leading) }
+                }
+            }.padding(24).frame(width:860,height:600)
+        }
     }
     private func candidateColumn(_ report: RealtimeSnapshot, _ strategy: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let candidates=strategy=="bottom_volume" ? (report.bottomVolume?.candidates ?? []):report.strategies[strategy,default:[]]
+        return VStack(alignment: .leading, spacing: 12) {
             Text(realtimeStrategy(strategy)).font(.headline)
-            if (report.strategies[strategy] ?? []).isEmpty { Text("本轮无符合条件的候选").foregroundStyle(Palette.muted).padding(.vertical, 16) }
-            ForEach(report.strategies[strategy, default: []]) { row in
+            if let change=report.changes?[strategy] {
+                Text("较 \(realtimeSlot(change.previousSlot))：新增 \(change.added.count)、移出 \(change.removed.count)、保留 \(change.retainedCount)").font(.caption).foregroundStyle(Palette.muted)
+                if !change.added.isEmpty { Text("新增："+change.added.map(\.name).joined(separator:"、")).font(.caption) }
+                if !change.removed.isEmpty { Text("移出："+change.removed.map(\.name).joined(separator:"、")).font(.caption).foregroundStyle(Palette.muted) }
+            }
+            if candidates.isEmpty { Text("本轮已完成筛选，0 只候选").foregroundStyle(Palette.muted).padding(.vertical, 16) }
+            ForEach(candidates) { row in
                 GroupBox {
                     VStack(alignment: .leading, spacing: 9) {
                         HStack { Text(row.name).font(.headline);Spacer();Text(String(format: "%.2f  %+.2f%%", row.price, row.change)).foregroundStyle(Palette.up).monospacedDigit() }
                         Text("\(row.tsCode) · \(row.state)").font(.caption).foregroundStyle(Palette.muted)
                         Text("行情 \(realtimeDate(row.quoteAt))\(row.timeBasis == "provider_updated_at" ? " · 供应商更新时间" : "")").font(.caption2).foregroundStyle(Palette.muted)
+                        if let low=row.low60,let distance=row.distanceLow60 { Text("60日低价 \(decimal(low)) · 距低价 \(percent(distance)) · 放量 \(decimal(row.volumeMultiple)) 倍").font(.caption).foregroundStyle(Palette.teal) }
                         DisclosureGroup("查看指标与核验条件") {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(String(format: "累计量 / 5日均量 %.2f倍 · 量比 %.2f · 均价 %.2f", row.volumeMultiple, row.volumeRatio, row.vwap))
@@ -145,6 +203,17 @@ struct RealtimeView: View {
                 }
             }
         }.frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    @ViewBuilder private func bottomSection(_ report:RealtimeSnapshot)->some View {
+        if let bottom=report.bottomVolume {
+            VStack(alignment:.leading,spacing:12) {
+                Text("\(dateText(report.date)) · 14:30 原始结果").font(.headline)
+                if bottom.complete {
+                    Text("命中 \(bottom.matchedCount) 只 · 展示 \(bottom.candidates.count) 只 · 按放量倍数排序").font(.system(size:12)).foregroundStyle(Palette.muted)
+                    candidateColumn(report,"bottom_volume")
+                } else { Text(bottom.message).font(.system(size:12)).foregroundStyle(Palette.amber) }
+            }.frame(maxWidth:.infinity,alignment:.leading)
+        }
     }
     private var settings: some View {
         GroupBox("实时策略与私人通知") {
@@ -191,7 +260,8 @@ struct RealtimeStrategyDescriptions: View {
                             Text("仍需复核").font(.system(size: 12, weight: .semibold)).padding(.top, 5)
                             ForEach(guide.review, id: \.self) { Text($0).font(.system(size: 11)).foregroundStyle(Palette.amber).lineSpacing(3) }
                             Text(guide.interpretation).font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
-                            Link(guide.sourceName, destination: URL(string: guide.sourceURL)!).font(.system(size: 11))
+                            if let text=guide.sourceURL,let url=URL(string:text) { Link(guide.sourceName,destination:url).font(.system(size:11)) }
+                            else { Text(guide.sourceName).font(.system(size:11)).foregroundStyle(Palette.muted) }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
                     }.frame(maxWidth: .infinity, alignment: .topLeading)
                 }
