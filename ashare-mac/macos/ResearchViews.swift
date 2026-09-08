@@ -103,6 +103,7 @@ struct DataView:View {
                     Panel { VStack(alignment:.leading,spacing:14) {
                         Text("统一发布结果").font(.headline)
                         Text(store.serverStatus?.job.active==true ? store.serverStatus!.job.message:"后台优先交给 Mac 计算；仅在 Mac 失联后由服务器接管。切换策略直接读取结果。").font(.system(size:12)).foregroundStyle(Palette.muted)
+                        if let provider=store.serverStatus?.marketProvider { Text("行情来源：\(provider)").font(.caption).foregroundStyle(Palette.muted) }
                         HStack {
                             Button("同步最新结果") { Task { await store.synchronizePublished() } }
                             Button("更新数据并选股") { store.run(update:true) }.buttonStyle(.borderedProminent)
@@ -114,7 +115,7 @@ struct DataView:View {
                 if store.serverConfigured {
                     Picker("行情来源",selection:Binding(get:{store.remoteEnabled},set:{store.changeDataSource($0)})) {
                         Text("服务器 \(store.serverHost)").tag(true)
-                        Text("本地数据 / ProMax").tag(false)
+                        Text("本地数据 / 行情更新").tag(false)
                     }.pickerStyle(.segmented).disabled(store.busy)
                 }
                 Panel {
@@ -124,12 +125,12 @@ struct DataView:View {
                         if !store.remoteEnabled { Text("新增数据：\(store.overlay.path)").font(.system(size:11,design:.monospaced)).foregroundStyle(Palette.muted).textSelection(.enabled) }
                         Divider()
                         HStack {
-                            Label(store.remoteEnabled ? "行情服务器":"ProMax",systemImage:"network").font(.system(size:13,weight:.semibold))
-                            Text(store.remoteEnabled ? "SSH 加密 · 只读连接":"读取 macOS 钥匙串凭据").font(.system(size:11)).foregroundStyle(Palette.muted)
+                            Label(store.remoteEnabled ? "行情服务器":"已配置的行情接口",systemImage:"network").font(.system(size:13,weight:.semibold))
+                            Text(store.remoteEnabled ? "SSH 加密 · 只读连接":"按本机行情来源配置更新").font(.system(size:11)).foregroundStyle(Palette.muted)
                             Spacer()
                             Button(store.remoteEnabled ? "同步服务器并选股":"更新数据并重新选股") { store.run(update:true) }.buttonStyle(.borderedProminent).tint(Palette.teal).disabled(store.busy)
                         }
-                        Text(store.remoteEnabled ? "同步服务器已发布的五张数据表，全部校验通过后切换版本。服务器模式使用独立缓存；切回本地模式可以通过 ProMax 更新行情。":"自动检查交易日历、日线、复权因子、涨跌停价及股票列表。按日期校验后保存，可重试。新数据存放于独立目录，原始行情保持只读。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                        Text(store.remoteEnabled ? "同步服务器已发布的五张数据表，全部校验通过后切换版本。服务器模式使用独立缓存；切回本地模式可以通过已配置的数据源更新行情。":"自动检查交易日历、日线、复权因子、涨跌停价及股票列表。按日期校验后保存，可重试。新数据存放于独立目录，原始行情保持只读。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(4)
                     }
                 }
                 }

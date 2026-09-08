@@ -11,6 +11,7 @@ import pandas as pd
 
 from .data import FIELDS, atomic_json, publish_day, read_dataset, read_reference, full_market_dates, minimum_market_rows
 from .provider import ProMax
+from .market_source import make_daily_provider
 
 
 def status(text: str) -> None:
@@ -79,11 +80,12 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError('已有数据更新正在运行') from None
-        client = ProMax()
+        client = make_daily_provider(reference_factory=ProMax)
+        provider_name=getattr(client,'name','ProMax')
         now = datetime.now(ZoneInfo('Asia/Shanghai'))
         cutoff = through or (now if now.hour >= 18 else now-timedelta(days=1)).strftime('%Y%m%d')
         pd.to_datetime(cutoff, format='%Y%m%d', errors='raise')
-        status('连接 ProMax，核对交易日历…')
+        status('连接 '+provider_name+'，核对交易日历…')
         cal_start,cal_end=f'{int(cutoff[:4])-1}0101',f'{cutoff[:4]}1231'
         calendar=load_calendar(root,overlay,cal_start,cal_end,client)
         save_reference(overlay/'reference'/'trade_cal.parquet', calendar)
@@ -115,6 +117,11 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
                 needed.append(date)
         failures, published = [], 0
         closing_proofs={}
+        preparation_error=None
+        if needed and callable(getattr(client,'prepare_days',None)):
+            status('从达塔读取待核验日期的股票日线…')
+            try:client.prepare_days(needed,known_codes=datasets['daily'].ts_code.unique().tolist())
+            except ValueError as error:preparation_error=str(error)
 
         def complete_day(i, date):
             try:
@@ -128,6 +135,7 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
                     if sufficient and date!=forced_date:
                         frames[k] = local
                     else:
+                        if k=='daily' and preparation_error:raise ValueError(preparation_error)
                         status(f'补齐 {i+1}/{len(needed)} · {date} · {k}')
                         # This ProMax deployment's fields-filtered historical pages
                         # were observed to overlap; request defaults and project
@@ -169,7 +177,7 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
             failures.append({'date':'stock_basic','error':str(e)})
             status(f'股票列表保留本地版本：{e}')
         result = {'through': dates[-1], 'updated_days': published, 'checked_sessions': len(dates),
-                  'completed_at': now.isoformat(), 'provider': 'ProMax',
+                  'completed_at': now.isoformat(), 'provider': provider_name,
                   'validation': 'partial' if failures else 'ok', 'failures':failures}
         if force_latest:
             proof,generation=closing_proofs.get(forced_date,(None,None))

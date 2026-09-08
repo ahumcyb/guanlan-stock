@@ -34,6 +34,7 @@ struct ServerStatus:Decodable {
     let schemaVersion:Int;let job:ServerJob;let workerOnline:Bool;let canRefresh:Bool;let macOnline:Bool?
     let reports:[String:MobileManifest]
     let marketStatus:MarketStatus?
+    let marketProvider:String?
 }
 
 struct MarketStatus:Codable {

@@ -40,7 +40,7 @@ struct DailySummaryScreen:View {
                         ForEach(report.evidence.strategies) { strategy in strategyCard(strategy) }
                         }.padding(.horizontal,4)
                         ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
-                        Text("生成于 \(dailyTime(report.generatedAt))。数据来自已核验的 ProMax 收盘行情；行业为成分股等权均值，非行业指数。AI 只作量价解读，未核验新闻或财务，不改变候选。")
+                        Text("生成于 \(dailyTime(report.generatedAt))。数据来自已核验的收盘行情；行业为成分股等权均值，非行业指数。AI 只作量价解读，未核验新闻或财务，不改变候选。")
                             .font(.caption).foregroundStyle(.secondary).lineSpacing(4).padding(.horizontal,4)
                     } else {
                         EmptyMessage(title:"等待收盘后的完整总结",text:"核对当日行情与四策略结果后，再生成复盘。可在右上角设置中更换 DeepSeek API Key。",icon:"sun.horizon")

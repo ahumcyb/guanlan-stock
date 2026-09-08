@@ -129,7 +129,7 @@ import UniformTypeIdentifiers
 
     private func launch(module: String) {
         activity = module == "engine.remote" ? "同步服务器":(module == "engine.update" ? "更新数据" : "选股计算")
-        progress = module == "engine.remote" ? "连接行情服务器…":(module == "engine.update" ? "连接 ProMax…" : "读取日线缓存…")
+        progress = module == "engine.remote" ? "连接行情服务器…":(module == "engine.update" ? "连接行情数据源…" : "读取日线缓存…")
         let task = Process(); let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: runtime.python)
         task.currentDirectoryURL = URL(fileURLWithPath:runtime.projectRoot)

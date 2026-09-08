@@ -94,7 +94,7 @@ struct DailySummaryView:View {
                     ForEach(report.evidence.strategies) { strategy in strategyPanel(strategy) }
                     }
                     ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.system(size:11)).foregroundStyle(Palette.amber) }
-                    Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的 ProMax 收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                    Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
                 } else {
                     Panel { EmptyViewMessage(icon:"sun.horizon",title:"等待收盘后的完整总结",message:"16:10 起核验当日行情，再生成市场、行业与四套策略复盘。可以在总结设置中更换 DeepSeek Key。") }
                 }

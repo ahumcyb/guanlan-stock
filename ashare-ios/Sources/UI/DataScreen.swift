@@ -23,9 +23,10 @@ struct MobileDataScreen:View {
                     ResearchCard {
                         VStack(alignment:.leading,spacing:14) {
                             Text("数据操作").font(.headline)
+                            if let provider=store.status?.marketProvider { Text("行情来源：\(provider)").font(.caption).foregroundStyle(.secondary) }
                             Button { Task { await store.synchronize() } } label: { Label("同步最新结果",systemImage:"arrow.down.circle").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.borderedProminent).disabled(store.busy || !store.connected)
                             Button { Task { await store.startJob("recompute") } } label: { Label("重新选股",systemImage:"arrow.clockwise").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.bordered).disabled(!canSubmit)
-                            Button { Task { await store.startJob("refresh") } } label: { Label("ProMax 更新数据并选股",systemImage:"externaldrive.badge.plus").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.bordered).disabled(!canSubmit || store.status?.canRefresh != true)
+                            Button { Task { await store.startJob("refresh") } } label: { Label("更新行情并选股",systemImage:"externaldrive.badge.plus").frame(maxWidth:.infinity,minHeight:32) }.buttonStyle(.bordered).disabled(!canSubmit || store.status?.canRefresh != true)
                             Text("同步读取已发布结果；重新选股使用已有行情。更新会补齐必要日线及配套数据，再计算四套盘后策略。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                         }
                     }

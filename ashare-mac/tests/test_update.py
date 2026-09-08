@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 import pandas as pd
@@ -7,6 +8,10 @@ from engine.update import update, validate_reference, load_calendar
 
 
 class UpdateTests(unittest.TestCase):
+    def setUp(self):
+        self.market=patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'})
+        self.market.start();self.addCleanup(self.market.stop)
+
     def test_complete_local_calendar_does_not_depend_on_network(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/'source'; (root/'raw').mkdir(parents=True)

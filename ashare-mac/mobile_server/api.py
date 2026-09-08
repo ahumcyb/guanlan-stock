@@ -19,6 +19,7 @@ from .daily import DailyStore
 from .watchlist import WatchlistStore
 from engine.close_proof import valid_date
 from engine.market_clock import market_status
+from engine.market_config import market_provider_name
 from engine.intraday import local_now
 
 
@@ -149,6 +150,7 @@ class Service:
                 except (OSError,ValueError,KeyError):pass
             return 200,dict(schema_version=1,job=self.state(),worker_online=online,mac_online=self.queue.mac_online(),
                 can_refresh=online and info.get('can_refresh',False),reports=available,
+                market_provider=market_provider_name(),
                 market_status=market_status(self.realtime.calendar(),local_now()))
         if method=='POST' and parts==['v1','jobs']:
             try:value=json.loads(body)

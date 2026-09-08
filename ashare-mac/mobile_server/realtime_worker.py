@@ -180,9 +180,10 @@ def main(args):
         job = json.loads(args.execute.read_text())
         atomic_json(args.result, execute_report(args.market_root, args.cache, job, config));return
     if args.calendar:
-        from engine.intraday_runner import read_calendar, IntradayProvider
+        from engine.intraday_runner import read_calendar
+        from engine.market_source import make_intraday_provider
         args.cache.mkdir(parents=True, exist_ok=True)
-        RealtimeStore(args.root).calendar(read_calendar(args.market_root, args.cache, IntradayProvider()));return
+        RealtimeStore(args.root).calendar(read_calendar(args.market_root, args.cache, make_intraday_provider()));return
     if config:
         cache = Path(config['workspace']).parent / 'realtime-worker'
         market = Path(config['workspace']) / 'market/current'

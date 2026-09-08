@@ -16,6 +16,8 @@ from .data import atomic_json, combine, source_paths, full_market_dates, minimum
 from .intraday import CODE, local_now, normalize_quote, screen,bottom_volume_screen,BOTTOM_RULE_VERSION
 from .provider import BASE_URL, NoRedirect, ProMax, parse_response
 from .sina_quotes import fetch_quotes as sina_quotes
+from .market_source import make_intraday_provider
+from .datta import DattaUnavailable
 
 FIELDS = 'ts_code,name,pre_close,open,high,low,close,vol,amount,trade_time'
 QUOTE_FIELDS = FIELDS + ',updated_at'
@@ -270,7 +272,7 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
     root = root.resolve()
     progress=progress or (lambda stage:None)
     progress('credentials')
-    provider = provider or IntradayProvider(); now = local_now()
+    provider = provider or make_intraday_provider(); now = local_now()
     progress('history')
     value = features_for(root, cache, provider, now)
     report = dict(schema_version=1, date=now.strftime('%Y%m%d'), generated_at=now.timestamp(),
@@ -291,14 +293,21 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
         report.update(status='empty', message='上一交易日没有可复查的尾盘候选')
         return report
     progress('quotes')
-    raw = provider.quotes(codes); report['quote_count'] = len(raw)
+    try:raw = provider.quotes(codes)
+    except DattaUnavailable as error:
+        report.update(status='blocked',failure_code='datta_unavailable',failure_stage='quotes',message=str(error))
+        return report
+    report['quote_count'] = len(raw)
     diagnostics=getattr(provider,'quote_diagnostics',None)
     if diagnostics:
         report['quote_diagnostics']=diagnostics
-        report['warnings'].append(f"本轮有效报价：ProMax {diagnostics['promax_quotes']}只，新浪备用 {diagnostics['sina_quotes']}只；时间来自对应报价记录。")
-        if diagnostics['primary_rejected']:
+        if diagnostics.get('provider')=='datta_d6':
+            report['warnings'].append(f"本轮有效报价：达塔 D6 {diagnostics['datta_quotes']}只；按各股票行情更新时间校验。")
+        else:
+            report['warnings'].append(f"本轮有效报价：ProMax {diagnostics['promax_quotes']}只，新浪备用 {diagnostics['sina_quotes']}只；时间来自对应报价记录。")
+        if diagnostics.get('primary_rejected'):
             report['warnings'].append('部分 ProMax 报价不可用或未通过时间/数值校验，已尝试获取完整的备用报价。')
-        if diagnostics['fallback_errors']:
+        if diagnostics.get('fallback_errors'):
             report['warnings'].append(f"备用行情有 {diagnostics['fallback_errors']} 个批次获取失败；未使用无效报价。")
     if getattr(provider, 'conflicting_quotes', 0):
         report['warnings'].append(f"剔除{provider.conflicting_quotes}只存在冲突快照的股票")
