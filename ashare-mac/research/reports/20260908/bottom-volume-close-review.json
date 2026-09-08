@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "as_of": "20260908",
+  "basis": "completed_daily_close_review",
+  "intraday_1430_status": "unavailable",
+  "intraday_1430_reason": "No original 14:30 snapshot; minute API failed or returned earlier dates.",
+  "produced_at": "2026-09-08T21:43:11.725514+08:00",
+  "rule": {
+    "lookback_completed_bars": 60,
+    "price_above_low_pct": [
+      0,
+      10
+    ],
+    "volume_multiple_min": 3,
+    "volume_baseline_completed_days": 5,
+    "baseline_start": "20260615",
+    "baseline_end": "20260907",
+    "today_volume": "full_day",
+    "adjustment_anchor": "20260907"
+  },
+  "source": {
+    "revision": "20260908-41c30659b9046461",
+    "manifest_sha256": "db34e416dc5b7738bb252f14c0add2b552010c64791e9c32f2666ee34d3075ba",
+    "features_sha256": "36e3bab1792d4b2cc7348d31a2bcb1ff6f772d1e6cb54829b6c109c1f68d7e4a",
+    "files": [
+      {
+        "name": "daily.parquet",
+        "bytes": 53410725,
+        "rows": 2230150,
+        "sha256": "a477ea09c914bfeb8c7b8ccf7ee6caa8cd5b63ecc53c034d240191781d6c29cd"
+      },
+      {
+        "name": "adj_factor.parquet",
+        "bytes": 169080,
+        "rows": 2240868,
+        "sha256": "ff942f0260526f8988c48fcf9cc330b42c5abdf52e1272f58ffa6bcd6e93f1d4"
+      },
+      {
+        "name": "stk_limit.parquet",
+        "bytes": 3652777,
+        "rows": 930272,
+        "sha256": "f98ca576a55e422ab81482a3a25f09f56fd986c83848a11d54d8bc84b8f29649"
+      },
+      {
+        "name": "stock_basic.parquet",
+        "bytes": 91863,
+        "rows": 5558,
+        "sha256": "ca1ed9b6f8702d12fd75e770a96dc2ba61f4e86759bee8c90c1594662e1725b7"
+      },
+      {
+        "name": "trade_cal.parquet",
+        "bytes": 3701,
+        "rows": 730,
+        "sha256": "ee34bb145455dd3a53960d7bb82946f48c3a04ac978fd9acbecc8498848a7eec"
+      }
+    ]
+  },
+  "coverage": {
+    "daily_market_rows": 5549,
+    "eligible_historical_features": 4985,
+    "today_covered": 4984,
+    "valid_daily_quotes": 4984,
+    "missing_today_codes": [
+      "688291.SH"
+    ],
+    "rejected_quotes": []
+  },
+  "matched_count": 2,
+  "candidates": [
+    {
+      "ts_code": "600076.SH",
+      "name": "康欣新材",
+      "close": 2.71,
+      "change": -4.912280701754391,
+      "pre_close": 2.85,
+      "low": 2.69,
+      "high": 2.83,
+      "low60": 2.5,
+      "mean_volume5": 12186340.0,
+      "day_volume_shares": 111716815.99999999,
+      "day_amount_yuan": 306591883.0,
+      "volume_multiple": 9.167380526064429,
+      "distance_low60": 8.400000000000007,
+      "close_match": true
+    },
+    {
+      "ts_code": "601198.SH",
+      "name": "东兴证券",
+      "close": 13.34,
+      "change": -4.714285714285715,
+      "pre_close": 14.0,
+      "low": 13.2,
+      "high": 14.1,
+      "low60": 12.537395573163378,
+      "mean_volume5": 22761455.6,
+      "day_volume_shares": 84206374.0,
+      "day_amount_yuan": 1149310933.0,
+      "volume_multiple": 3.69951621195966,
+      "distance_low60": 6.40168384376909,
+      "close_match": true
+    }
+  ],
+  "possible_1430_pool": [
+    {
+      "ts_code": "600076.SH",
+      "name": "康欣新材",
+      "close": 2.71,
+      "change": -4.912280701754391,
+      "pre_close": 2.85,
+      "low": 2.69,
+      "high": 2.83,
+      "low60": 2.5,
+      "mean_volume5": 12186340.0,
+      "day_volume_shares": 111716815.99999999,
+      "day_amount_yuan": 306591883.0,
+      "volume_multiple": 9.167380526064429,
+      "distance_low60": 8.400000000000007,
+      "close_match": true
+    },
+    {
+      "ts_code": "002415.SZ",
+      "name": "海康威视",
+      "close": 33.65,
+      "change": -3.4987094924003426,
+      "pre_close": 34.87,
+      "low": 32.1,
+      "high": 34.79,
+      "low60": 29.875472791987686,
+      "mean_volume5": 41246207.800000004,
+      "day_volume_shares": 185206079.0,
+      "day_amount_yuan": 6183684901.01,
+      "volume_multiple": 4.490257138257447,
+      "distance_low60": 12.634200751542934,
+      "close_match": false
+    },
+    {
+      "ts_code": "000516.SZ",
+      "name": "国际医学",
+      "close": 4.28,
+      "change": 4.90196078431373,
+      "pre_close": 4.08,
+      "low": 4.08,
+      "high": 4.3,
+      "low60": 3.82,
+      "mean_volume5": 11395274.6,
+      "day_volume_shares": 49084292.0,
+      "day_amount_yuan": 207423122.98,
+      "volume_multiple": 4.307425114617247,
+      "distance_low60": 12.041884816753946,
+      "close_match": false
+    },
+    {
+      "ts_code": "601198.SH",
+      "name": "东兴证券",
+      "close": 13.34,
+      "change": -4.714285714285715,
+      "pre_close": 14.0,
+      "low": 13.2,
+      "high": 14.1,
+      "low60": 12.537395573163378,
+      "mean_volume5": 22761455.6,
+      "day_volume_shares": 84206374.0,
+      "day_amount_yuan": 1149310933.0,
+      "volume_multiple": 3.69951621195966,
+      "distance_low60": 6.40168384376909,
+      "close_match": true
+    },
+    {
+      "ts_code": "688660.SH",
+      "name": "电气风电",
+      "close": 8.95,
+      "change": 14.596670934699096,
+      "pre_close": 7.81,
+      "low": 7.57,
+      "high": 9.37,
+      "low60": 7.18,
+      "mean_volume5": 25963672.599999998,
+      "day_volume_shares": 93283518.0,
+      "day_amount_yuan": 822062886.0,
+      "volume_multiple": 3.5928475696462145,
+      "distance_low60": 24.651810584958223,
+      "close_match": false
+    },
+    {
+      "ts_code": "603075.SH",
+      "name": "热威股份",
+      "close": 20.93,
+      "change": 9.984235417761411,
+      "pre_close": 19.03,
+      "low": 19.06,
+      "high": 20.93,
+      "low60": 18.01,
+      "mean_volume5": 1721827.6,
+      "day_volume_shares": 5872137.0,
+      "day_amount_yuan": 120839226.0,
+      "volume_multiple": 3.4104093812876504,
+      "distance_low60": 16.213214880621862,
+      "close_match": false
+    },
+    {
+      "ts_code": "600935.SH",
+      "name": "华塑股份",
+      "close": 2.42,
+      "change": 3.862660944205998,
+      "pre_close": 2.33,
+      "low": 2.37,
+      "high": 2.51,
+      "low60": 2.16,
+      "mean_volume5": 17365230.4,
+      "day_volume_shares": 58449100.0,
+      "day_amount_yuan": 142327750.0,
+      "volume_multiple": 3.3658695366345386,
+      "distance_low60": 12.037037037037024,
+      "close_match": false
+    },
+    {
+      "ts_code": "300264.SZ",
+      "name": "佳创视讯",
+      "close": 6.56,
+      "change": 4.292527821939585,
+      "pre_close": 6.29,
+      "low": 6.31,
+      "high": 7.0,
+      "low60": 5.81,
+      "mean_volume5": 11700692.0,
+      "day_volume_shares": 37369641.0,
+      "day_amount_yuan": 246603238.12,
+      "volume_multiple": 3.1937975121471447,
+      "distance_low60": 12.908777969018924,
+      "close_match": false
+    }
+  ],
+  "minute_validation": [
+    {
+      "ts_code": "000516.SZ",
+      "name": "国际医学",
+      "status": "rejected_stale_date",
+      "rows": 237,
+      "returned_dates": [
+        "2026-08-31"
+      ],
+      "sha256": "22a24925c64c33ebf0b63535a6c15400de70c28b2b92104cf2e0aeeb27ecbca2"
+    },
+    {
+      "ts_code": "002415.SZ",
+      "name": "海康威视",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily HTTP 503"
+    },
+    {
+      "ts_code": "300264.SZ",
+      "name": "佳创视讯",
+      "status": "rejected_stale_date",
+      "rows": 9,
+      "returned_dates": [
+        "2026-09-02"
+      ],
+      "sha256": "908749e6beae75a2bf7c9b7e2259524b52644e3d34a070ac0cd2257512a2f0c0"
+    },
+    {
+      "ts_code": "600076.SH",
+      "name": "康欣新材",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily 连接超时"
+    },
+    {
+      "ts_code": "600935.SH",
+      "name": "华塑股份",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily 连接超时"
+    },
+    {
+      "ts_code": "601198.SH",
+      "name": "东兴证券",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily 连接超时"
+    },
+    {
+      "ts_code": "603075.SH",
+      "name": "热威股份",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily 连接超时"
+    },
+    {
+      "ts_code": "688660.SH",
+      "name": "电气风电",
+      "status": "unavailable",
+      "reason": "ProMax rt_min_daily HTTP 503"
+    }
+  ],
+  "validation": {
+    "snapshot_file_hashes_and_counts": true,
+    "historical_values_recomputed_for_possible_pool": true,
+    "engine_close_screen_matches_independent_formula": true
+  },
+  "notes": [
+    "These are closing-data observations, not historical 14:30 signals.",
+    "No production realtime archive was created or modified and no stale notification was sent."
+  ]
+}

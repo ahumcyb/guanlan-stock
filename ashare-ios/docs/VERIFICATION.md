@@ -1,6 +1,6 @@
 # 验收记录 · 2026-09-05
 
-本文保留初版真机及早期策略发布的历史验收。当前第四策略为 [左侧低吸](../../ashare-mac/docs/LEFT_REBOUND.md)，最新安装及结算修复范围见 [2026-09-08 验收](../../ashare-mac/docs/VERIFICATION_20260908.md)；[60 日动量说明](../../ashare-mac/docs/MOMENTUM_60.md) 保留为历史记录。
+本文保留初版真机及早期策略发布的历史验收。当前第四策略为 [左侧低吸](../../ashare-mac/docs/LEFT_REBOUND.md)，iOS 1.6.0 安装、统一缓存及底部放量见 [产品验收](../../ashare-mac/docs/PRODUCT_VERIFICATION_20260908.md)，此前结算修复范围见 [2026-09-08 验收](../../ashare-mac/docs/VERIFICATION_20260908.md)；[60 日动量说明](../../ashare-mac/docs/MOMENTUM_60.md) 保留为历史记录。
 
 ## 真机交付
 
