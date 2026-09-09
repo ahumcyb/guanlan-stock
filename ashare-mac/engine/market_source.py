@@ -6,6 +6,7 @@ from .datta import DattaClient, DattaError, CODE, date_value
 from .intraday import local_now, normalize_quote
 from .market_config import market_configuration
 from .provider import ProMax
+from .d101_batch import BatchFallback, capture_batch, verify_batch
 
 
 class DattaMarketProvider:
@@ -14,6 +15,8 @@ class DattaMarketProvider:
     def __init__(self,reference_factory=ProMax,client=None):
         settings=market_configuration()
         self.client=client or DattaClient(settings['base_url'],settings['workers'])
+        self.batch_enabled=settings['quote_mode']=='d101_batch'
+        self.batch_base_url=settings['base_url']
         self.reference_factory=reference_factory;self._reference=None;self._basic=None;self._daily={}
         self.quote_diagnostics={};self.index_diagnostics={}
 
@@ -66,6 +69,21 @@ class DattaMarketProvider:
         self.quote_diagnostics=dict(self.client.diagnostics,datta_quotes=len(valid),
                                     unavailable=len(codes)-len(valid))
         return valid
+
+    def screen_quotes(self,features,include_bottom):
+        codes=sorted(features);now=local_now()
+        try:
+            capture=capture_batch(self.batch_base_url,codes,now.strftime('%Y%m%d'))
+            rows,diagnostics=verify_batch(capture,codes,features,self.client,local_now(),include_bottom,clock=local_now)
+            self.quote_diagnostics=dict(diagnostics,datta_quotes=len(rows))
+            return rows
+        except (BatchFallback,DattaError) as error:
+            # Keep the proven full-universe path available when batch data cannot
+            # be trusted. Never attach receipt time to an unverified candidate.
+            reason=str(error) if isinstance(error,BatchFallback) else 'd6_verification_unavailable'
+            rows=self.quotes(codes)
+            self.quote_diagnostics.update(mode='d6_fallback',batch_fallback_reason=reason)
+            return rows
 
     def index_quote(self,code='000300.SH'):
         if code!='000300.SH':raise DattaError('盘中策略仅使用沪深300指数')

@@ -111,7 +111,7 @@ struct RealtimeView: View {
                     HStack {
                         Text("\(dateText(report.date)) · \(realtimeSlot(report.slot)) · \(report.executionLabel)").font(.headline)
                         Spacer()
-                        Text("新鲜行情 \(report.freshCount ?? 0) / \(report.universeCount ?? 0)").font(.caption).foregroundStyle(Palette.muted)
+                        Text(report.quoteCoverageLabel).font(.caption).foregroundStyle(Palette.muted)
                     }
                     ForEach(report.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(Palette.amber) }
                     if report.complete { HStack(alignment: .top, spacing: 18) {

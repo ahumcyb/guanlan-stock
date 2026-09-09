@@ -7,14 +7,14 @@
 - 客户端 76.0.0。Mac 数据 API 通过 `127.0.0.1:8080`，管理端 `127.0.0.1:9527`。实际联调发现账号不能同时登录两台，且 Linux 服务器的 D6 实时报价返回上游请求失败；因此仅在 Mac 保持达塔登录，服务器计算接管保留 ProMax / 新浪备用行情。服务器达塔客户端已安装但停止自启，避免踢掉 Mac 登录；两端口已限制为本机访问。
 - 实时股票及沪深300采用 D6 `stock/fundamentals`。实际样本中价格字段除以 1,000 转为元，成交量为股、成交额为元。每只股票的 `marketDate` 与 `dataTimestamp` 必须一致；外层 `timestamp` 不作为行情新鲜度。
 - D6 `kline/history` 支持 `DAY` 与 `MIN1`，沪深及北交所已取得真实样本。日线股数除以100、金额除以1000转换为现有数据表单位；分钟线保留股和元。
-- D101 现客户端使用 snapshot 消息，且已观察到价格倍率与旧资料不符；代理发送时间无法证明股票行情新鲜。本轮不把该通道用作通过时效检查的实时来源。
+- D101 使用 `snapshot` 一次请求策略全池，按 `decimal_num` 还原价格、按 `volume_unit_flag` 转换股/手，显式获取 `trade_date` 和成交额。D101 仅用于同日批量初筛；所有潜在候选再取 D6 并校验个股更新时间，最终选股仍使用 D6 数值。代理发送时间只检查传输延迟，不能替代个股行情时间。详见[批量模式](D101_BATCH.md)。
 - 股票名录、行业、交易日历、复权因子和涨跌停参考继续走已有参考数据接口，避免把未确认语义的字段当成可复现历史因子。行情价格与成交量迁移到达塔。
 - 未登录、无授权、无数据、时间不合格及网络失败分开处理；不把缺数作为零候选，也不悄悄改用另一行情来源。
 
 ## 验证与切换
 
-先完成字段边界测试、完整市场采集与既有日线交叉核对，再启用运行配置。配置中不包含账号密码。测试样本、安装包、实际账号与客户端状态留在 Git 忽略的私有目录。App 标明“Mac：达塔 D6；服务器备用：ProMax”，每轮结果继续保留实际执行节点与报价来源。
+先完成字段边界测试、完整市场采集与既有日线交叉核对，再启用运行配置。配置中不包含账号密码。测试样本、安装包、实际账号与客户端状态留在 Git 忽略的私有目录。App 标明“Mac：达塔批量初筛＋D6复核；服务器备用：ProMax”，每轮结果继续保留实际执行节点与报价来源。
 
-Mac：`settings/market-source.json` 使用 `provider=datta`；服务器使用 `provider=promax, primary_provider=datta`。环境变量 `GUANLAN_MARKET_PROVIDER=promax` 可显式恢复旧路径。客户端未连接或失去权限时会说明原因，不把缺数报为无候选。
+Mac：`settings/market-source.json` 使用 `provider=datta, quote_mode=d101_batch`；服务器使用 `provider=promax, primary_provider=datta, primary_quote_mode=d101_batch`，其中 `primary_quote_mode` 只描述 Mac 策略，不会在服务器启动达塔。将 Mac `quote_mode` 改回 `d6` 可回退全池逐股请求；环境变量 `GUANLAN_MARKET_PROVIDER=promax` 可显式恢复旧路径。客户端未连接或失去权限时会说明原因，不把缺数报为无候选。
 
 安装包来源为[供应商下载页](https://dat.gt.tc/download.html)，Mac 包 SHA-256 为 `1a5011df6180a56f2ea039d01319936e316115f4606eeee48a2ab1c42d07eb32`，Linux 无界面包为 `775de8bd5f8d8c3a788e8c09c6af300ee60d5a32312c783fd7e8fc21a8441a5b`。用户提供资料包摘要为 `fd1d46795f253aed0fc7ed7e45887426ac8cb5cf065be8f3a3e5ed86078cbdd8`。

@@ -2,7 +2,7 @@
 
 本机运行的 macOS 原生 A 股短线研究软件。SwiftUI 界面，Python 独立引擎；原始行情只读，策略没有导入 quanta 的旧算法或权重。
 
-Mac 1.8.0（10）已接入达塔 D6 实时报价、分钟线和日线；服务器离线接管保留原行情备用，App 明确显示主备来源。四策略继续读取同一发布版本，自选逐条同步，提醒绑定固定轮次；[底部放量](docs/BOTTOM_VOLUME.md) 仍为 14:30 检查至少 2.5 倍且当日上涨。详见 [达塔接入](docs/DATTA_MIGRATION.md) 与 [本次验收](docs/DATTA_VERIFICATION_20260909.md)。
+Mac 1.8.1（11）支持[达塔批量初筛＋D6逐股复核](docs/D101_BATCH.md)，实时页面区分批量覆盖与复核数量。分钟线和日线继续使用 D6；服务器离线接管保留原行情备用。四策略继续读取同一发布版本，自选逐条同步，提醒绑定固定轮次；[底部放量](docs/BOTTOM_VOLUME.md) 仍为 14:30 检查至少 2.5 倍且当日上涨。详见 [达塔接入](docs/DATTA_MIGRATION.md)。
 
 已增加 [iPhone / iPad 工程](../ashare-ios/README.md)：手机提交任务后，本机后台节点优先更新、计算并上传；只有 Mac 失联时，服务器才使用相同引擎接管。四套盘后策略和图表按版本校验后供手机读取。后台节点登录后运行，不依赖 Mac App 窗口开启；运行维护见 [手机与 Mac 调度说明](../ashare-ios/docs/OPERATIONS.md)。
 

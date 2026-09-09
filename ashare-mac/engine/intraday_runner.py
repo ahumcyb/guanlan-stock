@@ -293,15 +293,23 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
         report.update(status='empty', message='上一交易日没有可复查的尾盘候选')
         return report
     progress('quotes')
-    try:raw = provider.quotes(codes)
+    try:
+        if kind=='screen' and getattr(provider,'batch_enabled',False):
+            raw=provider.screen_quotes(value['features'],slot_id==report['date']+'-1430')
+        else:raw = provider.quotes(codes)
     except DattaUnavailable as error:
         report.update(status='blocked',failure_code='datta_unavailable',failure_stage='quotes',message=str(error))
         return report
     report['quote_count'] = len(raw)
     diagnostics=getattr(provider,'quote_diagnostics',None)
+    batch_verified=bool(diagnostics and diagnostics.get('mode')=='d101_batch_verified')
     if diagnostics:
         report['quote_diagnostics']=diagnostics
-        if diagnostics.get('provider')=='datta_d6':
+        if batch_verified:
+            report.update(quote_count=diagnostics['coverage_count'],batch_quote_count=diagnostics['batch_count'],
+                          batch_received_at=diagnostics['batch_received_at'])
+            report['warnings'].append(f"D101同日批量覆盖 {diagnostics['coverage_count']}/{len(codes)}，D6逐股复核 {diagnostics['verified_count']}只。批量记录为采集时点数据，最终候选使用D6行情更新时间。")
+        elif diagnostics.get('provider')=='datta_d6':
             report['warnings'].append(f"本轮有效报价：达塔 D6 {diagnostics['datta_quotes']}只；按各股票行情更新时间校验。")
         else:
             report['warnings'].append(f"本轮有效报价：ProMax {diagnostics['promax_quotes']}只，新浪备用 {diagnostics['sina_quotes']}只；时间来自对应报价记录。")
@@ -309,9 +317,10 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
             report['warnings'].append('部分 ProMax 报价不可用或未通过时间/数值校验，已尝试获取完整的备用报价。')
         if diagnostics.get('fallback_errors'):
             report['warnings'].append(f"备用行情有 {diagnostics['fallback_errors']} 个批次获取失败；未使用无效报价。")
+        if diagnostics.get('mode')=='d6_fallback':report['warnings'].append('批量数据未通过检查，已回退全池D6逐股采集。')
     if getattr(provider, 'conflicting_quotes', 0):
         report['warnings'].append(f"剔除{provider.conflicting_quotes}只存在冲突快照的股票")
-    if len(raw) < len(codes):
+    if report['quote_count'] < len(codes):
         report['warnings'].append('部分股票暂无可用快照，结果只覆盖显示的新鲜行情集合')
     now = local_now(); quotes = []
     for r in raw:
@@ -320,7 +329,11 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
         except (ValueError, TypeError):
             pass
     report['fresh_count'] = len(quotes);report['generated_at'] = now.timestamp()
-    if not quotes or len(quotes) < len(codes) * .90:
+    coverage=report['quote_count'] if batch_verified else len(quotes)
+    if batch_verified and len(quotes)!=len(raw):
+        report.update(status='blocked',failure_code='quotes_expired',failure_stage='quotes',message='批量初筛后的逐股报价已过时，本轮未完成')
+        return report
+    if not quotes or coverage < len(codes) * .90:
         report.update(status='blocked',failure_code='quotes_incomplete',failure_stage='quotes',
                       message=f'同日新鲜行情 {len(quotes)}/{len(codes)}，不足90%，本轮停止筛选')
         return report

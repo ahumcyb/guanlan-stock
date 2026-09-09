@@ -38,6 +38,8 @@ struct RealtimeSnapshot: Codable {
     let universeCount: Int?
     let quoteCount: Int?
     let freshCount: Int?
+    let batchQuoteCount: Int?
+    let batchReceivedAt: Double?
     let indexChange: Double?
     let ai: RealtimeAI?
     let runState:String?
@@ -45,6 +47,12 @@ struct RealtimeSnapshot: Codable {
     let changes:[String:RealtimeSelectionChange]?
     let bottomVolume:BottomVolumeResult?
     var complete:Bool { ["ready","empty"].contains(status) && runState != "waiting" }
+    var quoteCoverageLabel:String {
+        if let batchQuoteCount {
+            return "批量覆盖 \(batchQuoteCount) / \(universeCount ?? 0) · D6复核 \(freshCount ?? 0)只"
+        }
+        return "新鲜行情 \(freshCount ?? 0) / \(universeCount ?? 0)"
+    }
     var executionLabel:String {
         if status=="blocked",bottomVolume?.complete==true { return "原两套策略未完成；底部放量已完成" }
         if ["ready","empty"].contains(status),let bottom=bottomVolume,!bottom.complete { return "原两套策略完成；底部放量未完成" }

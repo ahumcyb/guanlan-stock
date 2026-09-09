@@ -9,13 +9,40 @@ from unittest.mock import patch
 import pandas as pd
 
 from engine.datta import DattaError
-from engine.market_config import market_configuration
+from engine.market_config import market_configuration, market_provider_name
 from engine.market_source import DattaMarketProvider, make_daily_provider
 from engine.datta import decode_quote
 from tests.test_datta import quote_payload, NOW
 
 
 class MarketSourceTests(unittest.TestCase):
+    def test_batch_policy_distinguishes_the_mac_primary_from_server_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'source.json'
+            with patch.dict(os.environ,{'GUANLAN_MARKET_CONFIG':str(path),'GUANLAN_MARKET_PROVIDER':''}):
+                path.write_text(json.dumps(dict(provider='datta',quote_mode='d101_batch')))
+                self.assertEqual(market_provider_name(),'达塔批量初筛＋D6复核')
+                path.write_text(json.dumps(dict(provider='promax',primary_provider='datta',primary_quote_mode='d101_batch')))
+                self.assertEqual(market_provider_name(),'Mac：达塔批量初筛＋D6复核；服务器备用：ProMax')
+                self.assertEqual(market_configuration()['provider'],'promax')
+                path.write_text(json.dumps(dict(provider='datta',quote_mode='unverified')))
+                with self.assertRaises(DattaError):market_configuration()
+
+    def test_rejected_batch_retries_the_complete_d6_universe(self):
+        from engine.d101_batch import BatchFallback
+        from unittest.mock import Mock
+        client=Mock();client.quotes.return_value=[decode_quote(quote_payload(),'600000.SH')]
+        client.diagnostics=dict(provider='datta_d6')
+        with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'}),\
+             patch('engine.market_source.local_now',return_value=NOW),\
+             patch('engine.market_source.capture_batch',side_effect=BatchFallback('wrong_trade_date')):
+            provider=DattaMarketProvider(client=client)
+            result=provider.screen_quotes({'600000.SH':{},'600001.SH':{}},True)
+        client.quotes.assert_called_once_with(['600000.SH','600001.SH'])
+        self.assertEqual(len(result),1)
+        self.assertEqual(provider.quote_diagnostics['mode'],'d6_fallback')
+        self.assertEqual(provider.quote_diagnostics['batch_fallback_reason'],'wrong_trade_date')
+
     def test_explicit_source_config_and_invalid_config_are_not_silent_fallbacks(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'source.json'

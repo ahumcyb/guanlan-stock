@@ -1,8 +1,8 @@
 # 观澜选股
 
-2026-09-09：Mac 1.8.0（10）已接入达塔 D6 实时报价、分钟线和日线更新，iOS 1.7.0（10）已安装并显示主备来源。受账号单点登录及服务器报价接口实测限制，Mac 保持达塔登录，服务器离线接管保留 ProMax / 新浪备用。272 项测试通过；[接入说明](ashare-mac/docs/DATTA_MIGRATION.md) 和 [验收记录](ashare-mac/docs/DATTA_VERIFICATION_20260909.md) 记录了数据、版本及边界。
+2026-09-09：Mac 1.8.1（11）已启用达塔 D101 批量初筛＋D6逐股复核，iOS 1.7.1（11）已安装并启动，实时页面区分批量覆盖与复核数量。一次批量采集实测约0.7秒覆盖4,984只（使用9月8日收盘数据验证）。288项测试在Mac和服务器通过，14:30等既定调度及Bark通知继续启用。详见[批量模式与验收](ashare-mac/docs/D101_BATCH.md)。
 
-面向 A 股研究与尾盘定时筛选的 macOS 和 iPhone 原生应用。SwiftUI 界面、Python 引擎、ProMax 行情，Mac 优先计算并上传结果，Mac 失联时服务器接管。交易日14:30、14:45、14:50自动筛选，完成后通过 Bark 提醒手机，点击进入观澜查看结果。
+面向 A 股研究与尾盘定时筛选的 macOS 和 iPhone 原生应用。SwiftUI 界面、Python 引擎、达塔行情与 ProMax 备用，Mac 优先计算并上传结果，Mac 失联时服务器接管。交易日14:30、14:45、14:50自动筛选，完成后通过 Bark 提醒手机，点击进入观澜查看结果。
 
 新增交易日 16:10 的每日收盘总结：核验当日行情与四策略结果，生成量价事实和 DeepSeek 解读，完成后通过 Bark 提醒；Mac 和 iPhone 的总结设置均可更换 API Key。
 
@@ -14,6 +14,7 @@
 | [ashare-ios](ashare-ios/README.md) | iPhone / iPad 应用、股票搜索、K 线、观察列表、CSV 分享与个人签名安装 |
 | [运行维护](ashare-ios/docs/OPERATIONS.md) | Mac 优先调度、服务器接管、连接配置与维护命令 |
 | [达塔行情接入](ashare-mac/docs/DATTA_MIGRATION.md) | Mac 实时、分钟和日线使用达塔；历史参考数据与服务器备用路径保留 |
+| [批量模式](ashare-mac/docs/D101_BATCH.md) | D101 全池初筛、D6 候选复核、异常回退、性能与部署验收 |
 | [达塔接入验收](ashare-mac/docs/DATTA_VERIFICATION_20260909.md) | 4,983 只报价、5,548 条日线、分红前后历史价格核对及 272 项测试 |
 | [验收记录](ashare-ios/docs/VERIFICATION.md) | 真机安装、数据回读、两端一致性及 82 项测试记录 |
 | [实时策略](ashare-mac/docs/REALTIME_STRATEGIES.md) | 两篇来源的规则定义、行情时间与覆盖校验 |

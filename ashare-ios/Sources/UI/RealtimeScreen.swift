@@ -65,7 +65,7 @@ struct RealtimeScreen: View {
                     Section("最近尾盘检查 · \(dateText(snapshot.date))") {
                         Text(snapshot.message).font(.subheadline)
                         HStack {
-                            Text("新鲜行情 \(snapshot.freshCount ?? 0) / \(snapshot.universeCount ?? 0)")
+                            Text(snapshot.quoteCoverageLabel)
                             Spacer()
                             if let change = snapshot.indexChange { Text(String(format: "沪深300 %+.2f%%", change)) }
                         }.font(.caption).foregroundStyle(.secondary)
