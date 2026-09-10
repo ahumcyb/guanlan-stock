@@ -40,6 +40,7 @@ def collect_evidence(root, market_current, date, now):
     if header.get('revision')!=revision:raise ValueError('复盘行情版本不一致')
     frames=verify_package_close(market,date,receipt.get('close_attestation'),datetime.fromtimestamp(now,ZONE))
     from .daily_performance import collect_previous_performance
+    from .daily_realtime_performance import collect_realtime_performance
     from .daily_changes import market_changes,selection_changes,removal_reason
     performance=collect_previous_performance(root,market,date,frames)
     prior_codes={group['id']:{row['ts_code'] for row in group['rows']} for group in performance.get('strategies',[])}
@@ -136,6 +137,7 @@ def collect_evidence(root, market_current, date, now):
         universe_label='沪深 A 股个股日线，含 ST；不含 ETF、北交所和指数',
         market=market_stats,sectors_strong=strong,
         sectors_weak=sorted(sectors,key=lambda x:(x['mean_change'],x['name']))[:5],
-        strategies=strategies,performance=performance,warnings=warnings,
+        strategies=strategies,performance=performance,
+        realtime_performance=collect_realtime_performance(root,market,date,frames),warnings=warnings,
         market_changes=market_changes(root,performance.get('signal_date'),market_stats,strong),
         selection_changes=selection_changes(strategies,performance,reviews))

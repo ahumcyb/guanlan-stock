@@ -73,7 +73,7 @@ def unsupported_daily_claim(result):
         r'|成交(?:额|量).{0,6}(?:维持|增加|减少|放大|萎缩|较昨|环比)'
         r'|连续(?:上涨|下跌|走强|走弱)|连涨|连跌|持续(?:上涨|下跌)|高位|低位'
         r'|创(?:新高|新低)|较(?:昨日|上日|前日)')
-    names=('流动性趋势','缩量回踩转强','缩量回踩','黄金坑','60 日风险调整动量')
+    names=('流动性趋势','缩量回踩转强','缩量回踩','黄金坑','60 日风险调整动量','底部放量')
     for field,value in result.items():
         values=value if field=='risks' else [value]
         for text in values:
@@ -100,6 +100,11 @@ def deepseek_daily_review(key,model,evidence):
         return failure('configuration','请在设置中配置有效的 DeepSeek Key 和模型。')
     fields=['date','universe_label','market','sectors_strong','sectors_weak','performance','warnings','market_changes','selection_changes']
     data={name:evidence[name] for name in fields if name in evidence}
+    realtime=evidence.get('realtime_performance')
+    if isinstance(realtime,dict):
+        data['realtime_performance']={key:value for key,value in realtime.items() if key!='strategies'}
+        data['realtime_performance']['strategies']=[{key:value for key,value in group.items() if key not in ['rows','source_sha256']}
+                                                   for group in realtime.get('strategies',[])]
     # Current picks are tomorrow's watchlist, never a source of today's strategy return.
     data['current_shortlists']=[{key:strategy[key] for key in ['id','name','shortlist_count'] if key in strategy}
                                for strategy in evidence.get('strategies',[])]
@@ -125,14 +130,17 @@ def deepseek_daily_review(key,model,evidence):
         'market_changes为空时只能描述成交额绝对值。有差异时直接引用预计算数字，使用“成交额变化X%”“市场宽度变化X个百分点”等表达；不能扩展成放量、缩量、量能维持、连续、高位或低位趋势。'
         '成交额不是资金净流入，行业等权平均涨跌幅不是行业指数。匹配分不是胜率。'
         '行业沿用给定原名逐个描述，不能擅自合并成产业链，例如不能把红黄酒归为农业。'
-        'strategy_view只依据performance：signal_date为之前选股日，evaluation_date为本日结算日。'
+        'strategy_view只依据performance（盘后精选）和realtime_performance（昨日实时提醒）：signal_date为之前选股日，evaluation_date为本日结算日。'
         '收益是此前保存精选从昨收至今收的复权观察涨跌，mean_return_pct和涨跌平数量由程序计算，直接引用，不自行重算。'
         '每个策略独立等权观察，未计费用、仓位和成交约束，不能累加成资金账户收益。partial或mean_return_pct为空时，整组未结算，禁止用已知股票平均冒充整体。'
+        '实时策略的mean_return_pct也是昨收至今收；mean_signal_return_pct则是昨日提醒快照价至今收，必须分开标注，不称为实际交易收益。'
+        '实时策略source_slot说明选用轮次；no_picks表示无样本，unavailable表示归档不足或未完成，两者都不是零收益。优先简述已结算实时策略的均值和涨跌数量，不推断长期胜率。'
+        'risks不重复概括收益计算口径，这部分由程序添加固定说明。'
         '缺少历史精选快照就明确无法结算，禁止用current_shortlists代替。current_shortlists是本日新选，留待下一交易日评价，不能把今日新选今日上涨算成策略盈利或胜率。'
         '旧策略若出现在performance，按原名结算，即使已被新策略替换；新策略没有昨日精选时不能倒填过去收益。'
         'selection_changes给出新选、连续两期均入选和移出名单及本日未满足条件。只解释有记录的变化；移出原因是筛选条件复核，不是亏损的因果解释，也不代表已止损成交。new_strategy是新启用，无可比较的旧精选；unavailable表示历史不足。'
         'market_view最多两句，重点解释已提供的变化或异常，不逐项重抄市场事实卡片；sector_view最多两句，可描述进入或离开行业涨幅前五的名单，不能说成资金流向。'
-        'strategy_view点出昨日精选表现与本日条件变化，少重复表格；watch_next优先提及连续两期入选或待重新满足条件的观察对象，最多举三只，不抄完整名单。'
+        'strategy_view分别点出昨日盘后精选与实时策略的本日表现，再概括有记录的条件变化，少重复表格；watch_next优先提及连续两期入选或待重新满足条件的观察对象，最多举三只，不抄完整名单。'
         'strategy_pool_above_ma20_pct 是策略基础池位于 MA20 上方的百分比，不是上涨占比或涨跌家数比；'
         'advancer_decliner_ratio 才是上涨家数除以下跌家数。不得混用任何指标。标题直接采用 report_headline。'
         '“缩量回踩转强”只是策略的完整名称，可以原样引用，不能由名称推断行业或全市场当日缩量。'
@@ -142,7 +150,7 @@ def deepseek_daily_review(key,model,evidence):
         '用短段落，不抄完整名单。若比较资料不足就明确说明；即使有前后两日数据，也不能判断持续趋势或延续性。'
         '严格输出 json，且只包含以下字段：'
         '{"headline":"不超过30字标题","market_view":"市场量价，180字以内",'
-        '"sector_view":"行业分化，180字以内","strategy_view":"四策略结果，250字以内",'
+        '"sector_view":"行业分化，180字以内","strategy_view":"盘后与实时策略结果，350字以内",'
         '"watch_next":"下一交易日观察条件，150字以内","risks":["最多3项，每项80字以内"]}。')
     payload=dict(model=model,stream=False,thinking={'type':'disabled'},max_tokens=2000,
         response_format={'type':'json_object'},messages=[{'role':'system','content':instructions},{'role':'user','content':encoded}])
@@ -165,6 +173,11 @@ def deepseek_daily_review(key,model,evidence):
             raise ValueError()
         if unsupported_daily_claim(result):
             return failure('unsupported_claim','AI 解读含当前资料不能支持的判断，未展示该解读；已保留核验后的量价摘要。')
+        if 'realtime_performance' in data:
+            accounting=('收益','涨跌','口径','计算','起算','基准');bases=('昨收','今收','提醒价','快照','复权')
+            note='今日等权涨跌统一按昨收至今收；“提醒价至今收”单列昨日提醒快照价起算结果。均为复权观察，未计费用、仓位和成交约束，不代表实盘收益。'
+            result['risks']=[note]+[risk for risk in result['risks'] if not
+                (any(word in risk for word in accounting) and any(word in risk for word in bases))][:4]
         result['headline']=headline
         return dict(status='ready',model=model,**result)
     except HTTPError as error:

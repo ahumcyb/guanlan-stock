@@ -91,6 +91,10 @@ class DailyStore:
         return report
 
     def write_report(self,report):
+        performance=report.get('evidence',{}).get('realtime_performance')
+        if report.get('analysis',{}).get('status')=='unavailable' and performance:
+            from .daily_realtime_performance import summary_text
+            report=dict(report,analysis=dict(report['analysis'],strategy_view=summary_text(performance)))
         if not valid_date(report.get('date')) or len(json.dumps(report,ensure_ascii=False,allow_nan=False).encode())>128*1024:
             raise ValueError('收盘总结内容超出限制')
         durable_json(self.root/'reports'/(report['date']+'.json'),report)

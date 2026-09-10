@@ -56,6 +56,7 @@ struct DailyReport:Codable {
             }
         }
         try evidence.performance?.validate(date:date)
+        try evidence.realtimePerformance?.validate(date:date)
         try evidence.marketChanges?.validate(date:date)
         if let changes=evidence.selectionChanges {
             guard Set(changes.map(\.id))==Set(evidence.strategies.map(\.id)),changes.count==4 else { throw CocoaError(.fileReadCorruptFile) }
@@ -68,6 +69,7 @@ struct DailyEvidence:Codable {
     let market:DailyMarketFacts;let sectorsStrong:[DailySector];let sectorsWeak:[DailySector]
     let strategies:[DailyStrategyFacts];let warnings:[String]
     let performance:DailyPerformance?
+    let realtimePerformance:DailyRealtimePerformance?
     let marketChanges:DailyMarketChanges?
     let selectionChanges:[DailySelectionChange]?
 }
@@ -137,6 +139,89 @@ struct DailyPerformanceRow:Codable,Identifiable {
     let tsCode:String;let name:String;let status:String;let returnPct:Double?;let reason:String?
     let previousClose:Double?;let currentClose:Double?;let previousAdjFactor:Double?;let currentAdjFactor:Double?
     var id:String { tsCode }
+}
+
+struct DailyRealtimePerformance:Codable {
+    let schemaVersion:Int;let signalDate:String?;let evaluationDate:String;let basis:String;let signalBasis:String
+    let status:String;let message:String;let strategies:[DailyRealtimeStrategyPerformance]
+    func validate(date:String) throws {
+        guard schemaVersion==1,evaluationDate==date,basis=="adjusted_close_to_close",signalBasis=="adjusted_signal_to_close",
+              ["available","unavailable"].contains(status),message.count<=600,
+              signalDate==nil || (validDailyDate(signalDate!) && signalDate!<date),
+              strategies.count==3,Set(strategies.map(\.id))==Set(["overnight","golden","bottom_volume"]),
+              (status=="available")==strategies.contains(where:{$0.status != "unavailable"}) else { throw CocoaError(.fileReadCorruptFile) }
+        for group in strategies { try group.validate(signalDate:signalDate) }
+    }
+}
+
+struct DailyRealtimeStrategyPerformance:Codable,Identifiable {
+    let id:String;let name:String;let status:String;let message:String
+    let sourceSlot:String?;let sourceSha256:String?;let ruleVersion:Int?;let matchedCount:Int?
+    let selectedCount:Int?;let settledCount:Int;let upCount:Int;let downCount:Int;let flatCount:Int
+    let meanReturnPct:Double?;let meanSignalReturnPct:Double?;let rows:[DailyRealtimePerformanceRow]
+    var sourceLabel:String {
+        guard let sourceSlot else { return "昨日归档不足" }
+        let clock=String(sourceSlot.suffix(4))
+        return "昨日 \(clock.prefix(2)):\(clock.suffix(2)) 轮次"
+    }
+    func validate(signalDate:String?) throws {
+        guard ["unavailable","no_picks","partial","complete"].contains(status),name.count<=40,message.count<=400,
+              settledCount>=0,upCount>=0,downCount>=0,flatCount>=0,
+              upCount+downCount+flatCount==settledCount else { throw CocoaError(.fileReadCorruptFile) }
+        if status=="unavailable" {
+            guard selectedCount==nil,settledCount==0,rows.isEmpty,meanReturnPct==nil,meanSignalReturnPct==nil,
+                  sourceSlot==nil,sourceSha256==nil else { throw CocoaError(.fileReadCorruptFile) }
+            return
+        }
+        guard let signalDate,let sourceSlot,let sourceSha256,let total=selectedCount,
+              sourceSlot.hasPrefix(signalDate+"-"),sourceSlot.count==13,
+              ["1430","1445","1450"].contains(String(sourceSlot.suffix(4))),
+              sourceSha256.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil,
+              (0...10).contains(total),total==rows.count,settledCount<=total,
+              Set(rows.map(\.tsCode)).count==total else { throw CocoaError(.fileReadCorruptFile) }
+        if id=="bottom_volume" {
+            guard sourceSlot==signalDate+"-1430",[1,2].contains(ruleVersion ?? 0),
+                  let matchedCount,(total...6500).contains(matchedCount),
+                  (total==0)==(matchedCount==0) else { throw CocoaError(.fileReadCorruptFile) }
+        }
+        for row in rows { try row.validate(signalDate:signalDate) }
+        let settled=rows.filter{$0.status=="settled"}
+        guard settled.count==settledCount,upCount==settled.filter({$0.returnPct!>1e-8}).count,
+              downCount==settled.filter({$0.returnPct! < -1e-8}).count,
+              flatCount==settled.filter({abs($0.returnPct!)<=1e-8}).count else { throw CocoaError(.fileReadCorruptFile) }
+        if status=="complete" {
+            guard total>0,total==settledCount,let meanReturnPct,let meanSignalReturnPct,
+                  meanReturnPct.isFinite,meanSignalReturnPct.isFinite,
+                  abs(settled.reduce(0){$0+$1.returnPct!/Double(total)}-meanReturnPct)<1e-6,
+                  abs(settled.reduce(0){$0+$1.signalReturnPct!/Double(total)}-meanSignalReturnPct)<1e-6 else { throw CocoaError(.fileReadCorruptFile) }
+        } else {
+            guard meanReturnPct==nil,meanSignalReturnPct==nil,
+                  status=="no_picks" ? total==0:(total>0 && settledCount<total) else { throw CocoaError(.fileReadCorruptFile) }
+        }
+    }
+}
+
+struct DailyRealtimePerformanceRow:Codable,Identifiable {
+    let tsCode:String;let name:String;let status:String;let reason:String?
+    let returnPct:Double?;let signalReturnPct:Double?;let signalPrice:Double;let quoteAt:Double
+    let previousClose:Double?;let currentClose:Double?;let previousAdjFactor:Double?;let currentAdjFactor:Double?
+    var id:String { tsCode }
+    func validate(signalDate:String) throws {
+        let formatter=DateFormatter();formatter.locale=Locale(identifier:"en_US_POSIX")
+        formatter.timeZone=TimeZone(identifier:"Asia/Shanghai");formatter.dateFormat="yyyyMMdd"
+        guard tsCode.range(of:"^[0-9]{6}\\.(SH|SZ)$",options:.regularExpression) != nil,name.count<=30,
+              ["settled","unsettled"].contains(status),signalPrice>0,signalPrice.isFinite,quoteAt>0,quoteAt.isFinite,
+              formatter.string(from:Date(timeIntervalSince1970:quoteAt))==signalDate,
+              [previousClose,currentClose,previousAdjFactor,currentAdjFactor].compactMap({$0}).allSatisfy({$0>0 && $0.isFinite}) else { throw CocoaError(.fileReadCorruptFile) }
+        if status=="settled" {
+            guard let p0=previousClose,let p1=currentClose,let a0=previousAdjFactor,let a1=currentAdjFactor,
+                  let returnPct,let signalReturnPct,returnPct.isFinite,signalReturnPct.isFinite,
+                  abs((p1*a1/(p0*a0)-1)*100-returnPct)<1e-6,
+                  abs((p1*a1/(signalPrice*a0)-1)*100-signalReturnPct)<1e-6 else { throw CocoaError(.fileReadCorruptFile) }
+        } else {
+            guard returnPct==nil,signalReturnPct==nil,reason?.isEmpty==false else { throw CocoaError(.fileReadCorruptFile) }
+        }
+    }
 }
 struct DailyPick:Codable,Identifiable {
     let tsCode:String;let name:String;let industry:String;let close:Double;let change:Double;let score:Double;let rank:Int

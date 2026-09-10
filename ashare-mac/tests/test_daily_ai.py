@@ -7,6 +7,42 @@ from mobile_server.notifications import deepseek_daily_review
 
 
 class DailyAITests(unittest.TestCase):
+    def test_realtime_returns_reach_ai_as_programmed_summaries_with_separate_bases(self):
+        evidence={'realtime_performance':dict(signal_date='20260909',evaluation_date='20260910',
+            basis='adjusted_close_to_close',signal_basis='adjusted_signal_to_close',status='available',
+            strategies=[dict(id='overnight',name='一夜持股',status='complete',source_slot='20260909-1450',
+                selected_count=10,settled_count=10,up_count=6,down_count=4,flat_count=0,
+                mean_return_pct=1.2,mean_signal_return_pct=1.8,rows=[{'name':'不需重复发送的明细'}])])}
+        content=dict(headline='收盘复盘',market_view='涨跌分化',sector_view='行业分化',strategy_view='昨日实时策略本日等权上涨1.2%。',watch_next='观察确认',risks=[])
+        with patch('mobile_server.notifications.build_opener') as factory:
+            factory.return_value.open.return_value=Response({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(content)}}]})
+            self.assertEqual(deepseek_daily_review('test-key-not-production','deepseek-v4-flash',evidence)['status'],'ready')
+            payload=json.loads(factory.return_value.open.call_args.args[0].data)
+            data=json.loads(payload['messages'][1]['content']);group=data['realtime_performance']['strategies'][0]
+            self.assertEqual(group['mean_return_pct'],1.2);self.assertEqual(group['mean_signal_return_pct'],1.8)
+            self.assertNotIn('rows',group)
+            self.assertIn('realtime_performance',payload['messages'][0]['content'])
+
+    def test_bottom_volume_strategy_names_are_not_mistaken_for_market_volume_claims(self):
+        from mobile_server.notifications import unsupported_daily_claim
+        for name in ['底部放量·2.5倍上涨','底部放量·原3倍规则','底部放量']:
+            self.assertFalse(unsupported_daily_claim(dict(strategy_view=name+'昨日没有样本。')))
+        self.assertTrue(unsupported_daily_claim(dict(market_view='全市场今日放量上涨。')))
+        self.assertTrue(unsupported_daily_claim(dict(strategy_view='底部放量策略通过，全市场今日放量。')))
+
+    def test_realtime_accounting_disclosure_is_fixed_even_when_ai_blurs_the_two_bases(self):
+        wrong='实时策略均为昨日提醒快照至今收的收益。'
+        content=dict(headline='收盘复盘',market_view='涨跌分化',sector_view='行业分化',strategy_view='候选表现分化',
+                     watch_next='观察确认',risks=[wrong,'停牌股票可能无法成交。','新闻和公告尚未核验。'])
+        with patch('mobile_server.notifications.build_opener') as factory:
+            factory.return_value.open.return_value=Response({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(content)}}]})
+            result=deepseek_daily_review('test-key-not-production','deepseek-v4-flash',{'realtime_performance':{'strategies':[]}})
+        self.assertEqual(result['status'],'ready')
+        self.assertNotIn(wrong,result['risks'])
+        self.assertIn('今日等权涨跌',result['risks'][0]);self.assertIn('昨收至今收',result['risks'][0])
+        self.assertIn('提醒价至今收',result['risks'][0]);self.assertIn('新闻和公告尚未核验。',result['risks'])
+        self.assertIn('停牌股票可能无法成交。',result['risks'])
+
     def test_verified_differences_are_sent_for_explanation_without_today_pick_returns(self):
         content=dict(headline='变化',market_view='成交额变化+5%。',sector_view='行业均值榜有变化。',strategy_view='昨日精选仍需观察。',watch_next='若条件再次满足，再观察。',risks=[])
         evidence={'market_changes':{'previous_date':'20260904','turnover_change_pct':5.},

@@ -29,6 +29,7 @@ struct DailySummaryScreen:View {
                         }.padding(.horizontal,4)
                         if let changes=report.evidence.marketChanges { changesCard(changes) }
                         performanceCard(report.evidence.performance)
+                        realtimePerformanceCard(report.evidence.realtimePerformance)
                         analysisCard(report.analysis,showStrategy:report.evidence.performance != nil)
                         if let changes=report.evidence.selectionChanges { selectionCard(changes) }
                         DisclosureGroup("收盘量价与行业明细") {
@@ -124,8 +125,45 @@ struct DailySummaryScreen:View {
             Label(analysis.status=="ready" ? "DeepSeek 量价解读":"量价摘要",systemImage:"text.alignleft").font(.headline)
             if analysis.status=="pending" { ProgressView("正在生成分析…") }
             paragraph("市场",analysis.marketView);paragraph("行业",analysis.sectorView)
-            if showStrategy { paragraph("昨日精选结算",analysis.strategyView) };paragraph("下一交易日",analysis.watchNext)
+            if showStrategy { paragraph("昨日策略结算",analysis.strategyView) };paragraph("下一交易日",analysis.watchNext)
             ForEach(analysis.risks,id:\.self) { Text("· "+$0).font(.caption).foregroundStyle(MobileTheme.amber).lineSpacing(4) }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
+    }
+    private func realtimePerformanceCard(_ performance:DailyRealtimePerformance?)->some View {
+        ResearchCard { VStack(alignment:.leading,spacing:16) {
+            Text("昨日实时提醒 · 今日收益").font(.headline)
+            if let performance {
+                Text("\(dateText(performance.signalDate ?? "—")) 候选 → \(dateText(performance.evaluationDate)) 收盘").font(.caption).foregroundStyle(.secondary)
+                ForEach(performance.strategies) { group in
+                    VStack(alignment:.leading,spacing:10) {
+                        Text(group.name).font(.subheadline.weight(.semibold))
+                        Text(group.message).font(.caption2).foregroundStyle(.secondary)
+                        if let selected=group.selectedCount {
+                            HStack {
+                                Metric(label:"今日等权涨跌",value:group.meanReturnPct.map(dailyChange) ?? "—",color:group.meanReturnPct.map(MobileTheme.change) ?? .secondary)
+                                Metric(label:"提醒价至今收",value:group.meanSignalReturnPct.map(dailyChange) ?? "—",color:group.meanSignalReturnPct.map(MobileTheme.change) ?? .secondary)
+                            }
+                            Text("候选 \(selected) · 已结算 \(group.settledCount) · 涨 \(group.upCount) / 跌 \(group.downCount) / 平 \(group.flatCount)").font(.caption2).foregroundStyle(.secondary)
+                            if group.status=="no_picks" { Text("昨日该轮次无候选，暂无收益样本。").font(.caption).foregroundStyle(.secondary) }
+                            if group.status=="partial" { Text("存在未结算股票，两个整体均值均暂不展示。").font(.caption).foregroundStyle(MobileTheme.amber) }
+                            if !group.rows.isEmpty {
+                                DisclosureGroup("逐股收益与价格") {
+                                    ForEach(group.rows) { row in
+                                        VStack(alignment:.leading,spacing:5) {
+                                            HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(.secondary);Spacer();Text(row.returnPct.map(dailyChange) ?? "未结算").foregroundStyle(row.returnPct.map(MobileTheme.change) ?? .secondary) }
+                                            Text("提醒价 \(decimal(row.signalPrice)) · 昨收 \(decimal(row.previousClose)) · 今收 \(decimal(row.currentClose))").font(.caption2).foregroundStyle(.secondary)
+                                            Text("提醒价至今收 \(row.signalReturnPct.map(dailyChange) ?? "—") · 行情 \(dailyTime(row.quoteAt))").font(.caption2).foregroundStyle(.secondary)
+                                            if let reason=row.reason { Text(reason).font(.caption2).foregroundStyle(MobileTheme.amber) }
+                                        }.font(.caption).padding(.top,8)
+                                    }
+                                }.font(.caption)
+                            }
+                        } else { Text("未结算 · 候选数量未知").font(.caption).foregroundStyle(MobileTheme.amber) }
+                    }
+                    if group.id != performance.strategies.last?.id { Divider() }
+                }
+                Text(performance.message).font(.caption2).foregroundStyle(.secondary)
+            } else { Text("旧版总结暂无实时策略结算。可重新核验并生成最近收盘日。").font(.caption).foregroundStyle(.secondary) }
         }.frame(maxWidth:.infinity,alignment:.leading) }
     }
     @ViewBuilder private func paragraph(_ title:String,_ text:String)->some View {

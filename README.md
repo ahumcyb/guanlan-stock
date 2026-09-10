@@ -1,6 +1,6 @@
 # 观澜选股
 
-2026-09-09：Mac 1.8.1（11）已启用达塔 D101 批量初筛＋D6逐股复核，iOS 1.7.1（11）已安装并启动，实时页面区分批量覆盖与复核数量。一次批量采集实测约0.7秒覆盖4,984只（使用9月8日收盘数据验证）。288项测试在Mac和服务器通过，14:30等既定调度及Bark通知继续启用。详见[批量模式与验收](ashare-mac/docs/D101_BATCH.md)。
+2026-09-10：每日收盘总结新增昨日三个实时策略的今日收益，分列昨收至今收与提醒价至今收，支持来源轮次、逐股价格和缺数说明。Mac 1.9.0（12）已安装，iOS 1.8.0（12）已签名构建，用户手机不在旁边，待稍后安装；新版通知已被 Bark 接受。301项测试在Mac和服务器通过，今天总结已补算。详见[验收记录](ashare-mac/docs/REALTIME_DAILY_VERIFICATION_20260910.md)。
 
 面向 A 股研究与尾盘定时筛选的 macOS 和 iPhone 原生应用。SwiftUI 界面、Python 引擎、达塔行情与 ProMax 备用，Mac 优先计算并上传结果，Mac 失联时服务器接管。交易日14:30、14:45、14:50自动筛选，完成后通过 Bark 提醒手机，点击进入观澜查看结果。
 
@@ -24,6 +24,7 @@
 | [首页第四策略](ashare-mac/docs/LEFT_REBOUND.md) | 左侧低吸日线形态；首次历史检验未显示盈利优势，透明保留规则和事件统计 |
 | [原动量历史](ashare-mac/docs/MOMENTUM_60.md) | 原 60 日风险调整动量的封存研究与验证限制 |
 | [无信号月份](ashare-mac/docs/EMPTY_MONTHS.md) | 展示完整检验月份；2026 年 6 月原三策略受市场宽度门槛影响，无信号月份不再缺席 |
+| [昨日实时收益](ashare-mac/docs/REALTIME_DAILY_VERIFICATION_20260910.md) | 三策略两个收益口径、固定昨日归档、程序摘要和新版通知 |
 | [每日收盘总结](ashare-mac/docs/DAILY_SUMMARY.md) | 指定日期收盘更新、Mac 优先、持久化复盘、DeepSeek 设置与手机提醒 |
 | [每日总结实测](ashare-mac/docs/DAILY_VERIFICATION_20260907.md) | 192 项测试、V4 Pro 实际解读、Mac 与模拟器结果回读、真机升级及当日总结回读 |
 | [产品优化验收](ashare-mac/docs/PRODUCT_VERIFICATION_20260908.md) | 257 项测试、统一缓存、自选共享、原始通知、日报变化及 Mac 实测 |

@@ -81,6 +81,7 @@ struct DailySummaryView:View {
                     }
                     if let changes=report.evidence.marketChanges { changesPanel(changes) }
                     performancePanel(report.evidence.performance)
+                    realtimePerformancePanel(report.evidence.realtimePerformance)
                     analysisPanel(report.analysis,showStrategy:report.evidence.performance != nil)
                     if let changes=report.evidence.selectionChanges { selectionPanel(changes) }
                     DisclosureGroup("收盘量价与行业明细") {
@@ -208,7 +209,7 @@ struct DailySummaryView:View {
                 if analysis.status=="pending" { ProgressView("正在生成 DeepSeek 分析…") }
                 paragraph("市场量价",analysis.marketView)
                 paragraph("行业分化",analysis.sectorView)
-                if showStrategy { paragraph("昨日精选结算",analysis.strategyView) }
+                if showStrategy { paragraph("昨日策略结算",analysis.strategyView) }
                 paragraph("下一交易日",analysis.watchNext)
                 ForEach(analysis.risks,id:\.self) { Text("· "+$0).font(.system(size:12)).foregroundStyle(Palette.amber).lineSpacing(4) }
             }.frame(maxWidth:.infinity,alignment:.leading)
@@ -216,6 +217,43 @@ struct DailySummaryView:View {
     }
     @ViewBuilder private func paragraph(_ title:String,_ body:String)->some View {
         if !body.isEmpty { VStack(alignment:.leading,spacing:7) { Text(title).font(.system(size:13,weight:.semibold));Text(body).font(.system(size:13)).lineSpacing(6).textSelection(.enabled) } }
+    }
+    private func realtimePerformancePanel(_ performance:DailyRealtimePerformance?)->some View {
+        Panel { VStack(alignment:.leading,spacing:18) {
+            Text("昨日实时提醒 · 今日收益").font(.headline)
+            if let performance {
+                Text("\(dateText(performance.signalDate ?? "—")) 候选 → \(dateText(performance.evaluationDate)) 收盘").font(.caption).foregroundStyle(Palette.muted)
+                ForEach(performance.strategies) { group in
+                    VStack(alignment:.leading,spacing:10) {
+                        Text(group.name).font(.system(size:13,weight:.semibold))
+                        Text(group.message).font(.caption).foregroundStyle(Palette.muted)
+                        if let selected=group.selectedCount {
+                            HStack {
+                                Metric(label:"今日等权涨跌",value:group.meanReturnPct.map(dailyChange) ?? "—",color:group.meanReturnPct.map{$0>=0 ? Palette.up:Palette.down} ?? Palette.muted)
+                                Metric(label:"提醒价至今收",value:group.meanSignalReturnPct.map(dailyChange) ?? "—",color:group.meanSignalReturnPct.map{$0>=0 ? Palette.up:Palette.down} ?? Palette.muted)
+                                Spacer()
+                                Text("候选 \(selected) · 已结算 \(group.settledCount)\n上涨 \(group.upCount) / 下跌 \(group.downCount) / 平盘 \(group.flatCount)").font(.caption).foregroundStyle(Palette.muted)
+                            }
+                            if group.status=="no_picks" { Text("昨日该轮次无候选，暂无收益样本。").font(.caption).foregroundStyle(Palette.muted) }
+                            if group.status=="partial" { Text("存在未结算股票，两个整体均值均暂不展示。").font(.caption).foregroundStyle(Palette.amber) }
+                            if !group.rows.isEmpty {
+                                DisclosureGroup("逐股收益与价格") {
+                                    ForEach(group.rows) { row in
+                                        VStack(alignment:.leading,spacing:5) {
+                                            HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text("今日 "+(row.returnPct.map(dailyChange) ?? "未结算")).foregroundStyle(row.returnPct.map{$0>=0 ? Palette.up:Palette.down} ?? Palette.muted);Text("提醒价至今收 "+(row.signalReturnPct.map(dailyChange) ?? "—")) }
+                                            Text("提醒价 \(decimal(row.signalPrice)) · 昨收 \(decimal(row.previousClose)) · 今收 \(decimal(row.currentClose)) · 行情 \(dailyTime(row.quoteAt))").foregroundStyle(Palette.muted)
+                                            if let reason=row.reason { Text(reason).foregroundStyle(Palette.amber) }
+                                        }.font(.system(size:11)).padding(.top,8)
+                                    }
+                                }.font(.caption)
+                            }
+                        } else { Text("未结算 · 候选数量未知").font(.caption).foregroundStyle(Palette.amber) }
+                    }
+                    if group.id != performance.strategies.last?.id { Divider() }
+                }
+                Text(performance.message).font(.caption).foregroundStyle(Palette.muted)
+            } else { Text("旧版总结暂无实时策略结算。可重新核验并生成最近收盘日。").font(.caption).foregroundStyle(Palette.muted) }
+        }.frame(maxWidth:.infinity,alignment:.leading) }
     }
     private func sectorPanel(_ title:String,rows:[DailySector])->some View {
         Panel { VStack(alignment:.leading,spacing:14) {

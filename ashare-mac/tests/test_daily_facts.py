@@ -51,6 +51,11 @@ class DailyFactsTests(unittest.TestCase):
             pd.DataFrame({'exchange':['SSE','SSE'],'cal_date':['20260903',DATE],'is_open':[1,1]}).to_parquet(raw/'trade_cal.parquet',index=False)
             groups=[dict(id=s,name=s,picks=[dict(ts_code=code,name='昨日精选',close=8.,rank=1)]) for s in HISTORICAL_STRATEGIES]
             save_snapshot(root,'20260903','20260903T161100-abcdef','20260903-'+'b'*16,groups)
+            from tests.test_daily_realtime_performance import run
+            from mobile_server.realtime_history import RealtimeArchive
+            archive=root/'jobs/realtime';archive.mkdir(parents=True)
+            realtime=run(date='20260903');realtime['strategies']['overnight'][0].update(ts_code=code,price=9.)
+            RealtimeArchive(archive).collect(dict(runs=[realtime],events=[]))
             facts=collect_evidence(root,market/'current',DATE,NOW.timestamp());result=facts['performance']
             self.assertEqual(result['status'],'available')
             self.assertEqual(result['signal_date'],'20260903')
@@ -60,6 +65,10 @@ class DailyFactsTests(unittest.TestCase):
                 self.assertEqual(group['rows'][0]['ts_code'],code)
                 self.assertEqual(group['mean_return_pct'],25.)
             self.assertNotEqual(facts['strategies'][0]['picks'][0]['ts_code'],code)
+            realtime=facts['realtime_performance']['strategies'][0]
+            self.assertEqual(realtime['mean_return_pct'],25.)
+            self.assertAlmostEqual(realtime['mean_signal_return_pct'],100/9)
+            self.assertEqual(realtime['source_slot'],'20260903-1450')
 
     def test_amount_units_counts_and_four_strategy_binding(self):
         with tempfile.TemporaryDirectory() as folder:
