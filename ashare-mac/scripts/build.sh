@@ -15,7 +15,7 @@ root=Path.cwd(); app=root/'build'/'观澜选股.app'/'Contents'
 with (app/'Info.plist').open('wb') as f:
  plistlib.dump(dict(CFBundleName='观澜选股',CFBundleDisplayName='观澜选股',
   CFBundleIdentifier='local.guanlan.ashare',CFBundleExecutable='Guanlan',
-  CFBundlePackageType='APPL',CFBundleShortVersionString='1.9.0',CFBundleVersion='12',
+  CFBundlePackageType='APPL',CFBundleShortVersionString='1.10.0',CFBundleVersion='13',
   LSMinimumSystemVersion='14.0',NSHighResolutionCapable=True,
   NSHumanReadableCopyright='本地 A 股研究工具',
   NSAppTransportSecurity={'NSExceptionDomains':{'106.14.125.189':{

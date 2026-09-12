@@ -261,6 +261,12 @@ import Combine
         let data=try await api.request("/v1/reports/\(manifest.strategy)/\(manifest.generation)/charts/\(code).json",limit:128*1024)
         return try cache.saveChart(data,manifest:manifest,code:code)
     }
+    func chartData(_ manifest:MobileManifest,code:String) async throws -> ChartDataset {
+        try await requestChartDataset(manifest:manifest,code:code,cache:cache,api:api)
+    }
+    func chartData(code:String,through:String?) async throws -> ChartDataset {
+        try await latestChartDataset(code:code,through:through,cache:cache,api:api,fallback:snapshot?.manifest)
+    }
     func export(_ stocks:[Stock]) throws -> URL {
         var rows=["代码,名称,行业,日期,收盘价,涨跌幅%,匹配分,状态,回踩参考,突破观察,失效参考"]
         rows += stocks.map { [$0.tsCode,$0.name,$0.industry,$0.tradeDate,decimal($0.close),decimal($0.change),decimal($0.score,digits:1),$0.state,decimal($0.support),decimal($0.breakout),decimal($0.invalidation)].map(csvCell).joined(separator:",") }

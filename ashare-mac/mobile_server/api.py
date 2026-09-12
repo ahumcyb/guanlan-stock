@@ -170,6 +170,12 @@ class Service:
             if len(parts)==5 and parts[4]=='report.json':return 200,checked_file(self.root,release/strategy/'report.json',MAX_REPORT)
             if len(parts)==6 and parts[4]=='charts' and parts[5].endswith('.json') and CODE.fullmatch(parts[5][:-5]):
                 return 200,checked_file(self.root,release/'charts'/parts[5],MAX_CHART)
+            if len(parts)==6 and parts[4]=='charts-extended' and parts[5].endswith('.json') and CODE.fullmatch(parts[5][:-5]):
+                path=release/'charts-extended'/(parts[5]+'.gz')
+                if not path.exists() and not path.is_symlink():raise Failure(404,'NOT_FOUND','这个归档仅提供标准日K线。')
+                from engine.chart_data import read_extended,MAX_COMPRESSED
+                manifest=json.loads(checked_file(self.root,release/strategy/'manifest.json',65536).read_text())
+                return 200,read_extended(checked_file(self.root,path,MAX_COMPRESSED),parts[5][:-5],manifest['as_of'],manifest['data_revision'])
         raise Failure(404,'NOT_FOUND','没有找到这个数据接口')
 
 

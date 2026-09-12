@@ -112,7 +112,13 @@ struct DailySummaryScreen:View {
                         if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(MobileTheme.amber) }
                         if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(.secondary) }
                         DisclosureGroup("逐股结算") {
-                            ForEach(group.rows) { row in VStack(alignment:.leading,spacing:4) { HStack { Text(row.name);Spacer();Text(row.returnPct.map(dailyChange) ?? "未结算") };Text(row.reason ?? String(row.tsCode.prefix(6))).font(.caption2).foregroundStyle(.secondary) }.font(.caption).padding(.top,6) }
+                            ForEach(group.rows) { row in
+                                NavigationLink {
+                                    MobileChartScreen(target:ChartTarget(code:row.tsCode,name:row.name,focus:performance.signalDate.map{ChartFocus(date:$0,price:row.previousClose,label:"昨日精选")},through:performance.evaluationDate))
+                                } label: {
+                                    VStack(alignment:.leading,spacing:4) { HStack { Text(row.name);Spacer();Text(row.returnPct.map(dailyChange) ?? "未结算");Image(systemName:"chart.xyaxis.line") };Text(row.reason ?? String(row.tsCode.prefix(6))).font(.caption2).foregroundStyle(.secondary) }.font(.caption).padding(.top,6)
+                                }
+                            }
                         }.font(.caption)
                     }.padding(.vertical,4)
                 }
@@ -154,6 +160,10 @@ struct DailySummaryScreen:View {
                                             Text("提醒价 \(decimal(row.signalPrice)) · 昨收 \(decimal(row.previousClose)) · 今收 \(decimal(row.currentClose))").font(.caption2).foregroundStyle(.secondary)
                                             Text("提醒价至今收 \(row.signalReturnPct.map(dailyChange) ?? "—") · 行情 \(dailyTime(row.quoteAt))").font(.caption2).foregroundStyle(.secondary)
                                             if let reason=row.reason { Text(reason).font(.caption2).foregroundStyle(MobileTheme.amber) }
+                                            NavigationLink {
+                                                MobileChartScreen(target:ChartTarget(code:row.tsCode,name:row.name,
+                                                    focus:ChartFocus(date:ChartDate.key(Date(timeIntervalSince1970:row.quoteAt)),price:row.signalPrice,label:String(realtimeDate(row.quoteAt).suffix(8))+" 提醒"),through:performance.evaluationDate))
+                                            } label: { Label("查看K线与提醒价",systemImage:"chart.xyaxis.line").font(.caption2) }
                                         }.font(.caption).padding(.top,8)
                                     }
                                 }.font(.caption)
@@ -182,7 +192,13 @@ struct DailySummaryScreen:View {
             Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.caption).foregroundStyle(.secondary)
             if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.caption).foregroundStyle(MobileTheme.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.subheadline).foregroundStyle(.secondary) }
-            ForEach(strategy.picks) { row in HStack { VStack(alignment:.leading,spacing:4) { Text(row.name);Text(String(row.tsCode.prefix(6))).font(.caption).foregroundStyle(.secondary) };Spacer();Text(decimal(row.close)).monospacedDigit();Text(dailyChange(row.change)).monospacedDigit().foregroundStyle(MobileTheme.change(row.change)) }.font(.subheadline) }
+            ForEach(strategy.picks) { row in
+                NavigationLink {
+                    MobileChartScreen(target:ChartTarget(code:row.tsCode,name:row.name,focus:report.map{ChartFocus(date:$0.date,price:row.close,label:"本日新选")},through:report?.date))
+                } label: {
+                    HStack { VStack(alignment:.leading,spacing:4) { Text(row.name);Text(String(row.tsCode.prefix(6))).font(.caption).foregroundStyle(.secondary) };Spacer();Text(decimal(row.close)).monospacedDigit();Text(dailyChange(row.change)).monospacedDigit().foregroundStyle(MobileTheme.change(row.change));Image(systemName:"chart.xyaxis.line") }.font(.subheadline)
+                }
+            }
         } }
     }
 }

@@ -190,6 +190,10 @@ struct RealtimeView: View {
                         HStack { Text(row.name).font(.headline);Spacer();Text(String(format: "%.2f  %+.2f%%", row.price, row.change)).foregroundStyle(Palette.up).monospacedDigit() }
                         Text("\(row.tsCode) · \(row.state)").font(.caption).foregroundStyle(Palette.muted)
                         Text("行情 \(realtimeDate(row.quoteAt))\(row.timeBasis == "provider_updated_at" ? " · 供应商更新时间" : "")").font(.caption2).foregroundStyle(Palette.muted)
+                        ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,
+                            focus:ChartFocus(date:ChartDate.key(Date(timeIntervalSince1970:row.quoteAt)),price:row.price,label:String(realtimeDate(row.quoteAt).suffix(8))+" 提醒"),through:nil)) {
+                            Label("查看K线并定位提醒",systemImage:"chart.xyaxis.line").font(.caption).foregroundStyle(Palette.teal)
+                        }
                         if let low=row.low60,let distance=row.distanceLow60 { Text("60日低价 \(decimal(low)) · 距低价 \(percent(distance)) · 放量 \(decimal(row.volumeMultiple)) 倍").font(.caption).foregroundStyle(Palette.teal) }
                         DisclosureGroup("查看指标与核验条件") {
                             VStack(alignment: .leading, spacing: 6) {

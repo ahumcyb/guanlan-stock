@@ -221,6 +221,10 @@ struct RealtimeCandidateDetail: View {
                 LabeledContent("代码", value: candidate.tsCode)
                 LabeledContent("状态", value: candidate.state)
                 LabeledContent("行情时间", value: realtimeDate(candidate.quoteAt))
+                NavigationLink {
+                    MobileChartScreen(target:ChartTarget(code:candidate.tsCode,name:candidate.name,
+                        focus:ChartFocus(date:ChartDate.key(Date(timeIntervalSince1970:candidate.quoteAt)),price:candidate.price,label:String(realtimeDate(candidate.quoteAt).suffix(8))+" 提醒"),through:nil))
+                } label: { Label("查看K线并定位提醒",systemImage:"chart.xyaxis.line") }
                 Text(candidate.timeBasis == "provider_updated_at" ? "时间依据为供应商更新时间，不是交易所逐笔时间。" : "时间依据为行情交易时间。")
                     .font(.caption).foregroundStyle(.secondary)
             }

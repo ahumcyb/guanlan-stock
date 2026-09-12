@@ -13,8 +13,8 @@ import UniformTypeIdentifiers
     @Published var dataRoot: String
     @Published var favorites: Set<String>
     @Published var selection: String?
-    @Published var candles: [Candle] = []
-    @Published var chartError: String?
+    let chartLoader=ChartLoadState()
+    private var chartTask:Task<Void,Never>?
     @Published var historyLog = ""
     @Published var strategy: String
     @Published var remoteEnabled: Bool
@@ -105,12 +105,33 @@ import UniformTypeIdentifiers
     func select(_ code: String?) { selection = code; loadChart() }
 
     func loadChart() {
-        candles = []; chartError = nil
-        if publishedMode { Task { await loadPublishedChart() };return }
-        guard let code = selection, let folder = generation else { return }
+        chartTask?.cancel();chartLoader.reset()
+        guard let code=selection else { return }
+        if publishedMode,let manifest=publishedSnapshot?.manifest {
+            chartTask=Task { await chartLoader.load(key:manifest.generation+code) {
+                try await requestChartDataset(manifest:manifest,code:code,cache:publishedCache,api:publishedAPI)
+            } };return
+        }
+        guard let folder=generation,let report else { return }
         guard code.range(of: #"^\d{6}\.(SH|SZ|BJ)$"#, options: .regularExpression) != nil else { return }
-        do { candles = try decoder.decode([Candle].self, from: Data(contentsOf: folder.appendingPathComponent("charts/\(code).json"))) }
-        catch { chartError = "K 线文件读取失败，请重新选股。" }
+        let runtime=runtime,asOf=report.asOf,revision=report.dataRevision
+        chartTask=Task { await chartLoader.load(key:folder.path+code) {
+            try await Task.detached(priority:.userInitiated) {
+                let extended=folder.appendingPathComponent("charts-extended/\(code).json.gz")
+                if FileManager.default.fileExists(atPath:extended.path) {
+                    let process=Process(),output=Pipe();process.executableURL=URL(fileURLWithPath:runtime.python)
+                    process.currentDirectoryURL=URL(fileURLWithPath:runtime.projectRoot)
+                    process.arguments=["-m","engine.chart_data","--folder",folder.path,"--code",code,"--as-of",asOf]
+                    if let revision { process.arguments! += ["--revision",revision] }
+                    process.standardOutput=output;process.standardError=FileHandle.nullDevice
+                    try process.run();let bytes=output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit()
+                    guard process.terminationStatus==0 else { throw ChartDataError.invalid }
+                    return try ChartDataset.decode(bytes,code:code,asOf:asOf,revision:revision)
+                }
+                let bytes=try Data(contentsOf:folder.appendingPathComponent("charts/\(code).json"))
+                return ChartDataset.legacy(try decodeCandles(bytes,asOf:asOf),code:code,asOf:asOf,revision:revision)
+            }.value
+        } }
     }
 
     func toggleFavorite(_ stock: Stock) {
@@ -181,7 +202,7 @@ import UniformTypeIdentifiers
         guard !busy, useServer != remoteEnabled else { return }
         guard !useServer || serverConfigured else { error="服务器连接尚未配置。";return }
         remoteEnabled=useServer;UserDefaults.standard.set(useServer,forKey:"useServerData")
-        report=nil;generation=nil;selection=nil;candles=[]
+        report=nil;generation=nil;selection=nil;chartLoader.reset()
         run(update:useServer)
     }
 
@@ -202,7 +223,7 @@ import UniformTypeIdentifiers
                 error="这个目录没有 raw/daily.parquet，请选择行情数据根目录。"; return
             }
             dataRoot=url.path; UserDefaults.standard.set(dataRoot,forKey:"dataRoot")
-            report=nil; generation=nil; selection=nil; candles=[]; run(update:false)
+            report=nil; generation=nil; selection=nil; chartLoader.reset(); run(update:false)
         }
     }
 

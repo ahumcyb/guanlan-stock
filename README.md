@@ -1,5 +1,7 @@
 # 观澜选股
 
+2026-09-12：新增日/周/月交互 K 线、大图、缩放平移、MA/MACD/RSI、原始价切换和提醒/日报定位。Mac 1.10.0（13）已安装；服务器新接口已发布，原生回读412根日线，旧120根接口保持兼容。Mac与服务器各309项Python测试、完整原生测试通过。iOS 1.9.0（13）已构建，原免费签名于今天14:51到期，需恢复Xcode账号后续签安装；新版尚未装入手机。详见[本次验收](ashare-mac/docs/KLINE_VERIFICATION_20260912.md)。
+
 2026-09-10：每日收盘总结新增昨日三个实时策略的今日收益，分列昨收至今收与提醒价至今收，支持来源轮次、逐股价格和缺数说明。Mac 1.9.0（12）已安装，iOS 1.8.0（12）已安装到配对手机，设备回读版本一致并成功启动；新版通知已被 Bark 接受。301项测试在Mac和服务器通过，今天总结已补算。详见[验收记录](ashare-mac/docs/REALTIME_DAILY_VERIFICATION_20260910.md)。
 
 面向 A 股研究与尾盘定时筛选的 macOS 和 iPhone 原生应用。SwiftUI 界面、Python 引擎、达塔行情与 ProMax 备用，Mac 优先计算并上传结果，Mac 失联时服务器接管。交易日14:30、14:45、14:50自动筛选，完成后通过 Bark 提醒手机，点击进入观澜查看结果。
@@ -24,6 +26,8 @@
 | [首页第四策略](ashare-mac/docs/LEFT_REBOUND.md) | 左侧低吸日线形态；首次历史检验未显示盈利优势，透明保留规则和事件统计 |
 | [原动量历史](ashare-mac/docs/MOMENTUM_60.md) | 原 60 日风险调整动量的封存研究与验证限制 |
 | [无信号月份](ashare-mac/docs/EMPTY_MONTHS.md) | 展示完整检验月份；2026 年 6 月原三策略受市场宽度门槛影响，无信号月份不再缺席 |
+| [K线升级](ashare-mac/docs/KLINE_UPGRADE.md) | 共享图表、500根扩展协议、指标与历史提醒定位 |
+| [K线验收](ashare-mac/docs/KLINE_VERIFICATION_20260912.md) | 309项测试、服务端发布、原生回读与待续签说明 |
 | [昨日实时收益](ashare-mac/docs/REALTIME_DAILY_VERIFICATION_20260910.md) | 三策略两个收益口径、固定昨日归档、程序摘要和新版通知 |
 | [每日收盘总结](ashare-mac/docs/DAILY_SUMMARY.md) | 指定日期收盘更新、Mac 优先、持久化复盘、DeepSeek 设置与手机提醒 |
 | [每日总结实测](ashare-mac/docs/DAILY_VERIFICATION_20260907.md) | 192 项测试、V4 Pro 实际解读、Mac 与模拟器结果回读、真机升级及当日总结回读 |

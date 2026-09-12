@@ -4,8 +4,7 @@ struct MobileStockDetail:View {
     @EnvironmentObject var store:MobileStore
     let stock:Stock
     let manifest:MobileManifest
-    @State private var candles:[Candle]=[]
-    @State private var chartError:String?
+    @StateObject private var chart=ChartLoadState()
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:16) {
@@ -17,8 +16,8 @@ struct MobileStockDetail:View {
                     }
                 }
                 ResearchCard {
-                    if !candles.isEmpty { MobileCandleChart(candles:candles,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation) }
-                    else if let chartError { VStack(alignment:.leading,spacing:12) { Text(chartError).font(.subheadline).foregroundStyle(.secondary);Button("重试 K 线") { Task { await load() } } } }
+                    if let data=chart.data { MobileCandleChart(data:data,name:stock.name,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation) }
+                    else if let error=chart.error { VStack(alignment:.leading,spacing:12) { Text(error).font(.subheadline).foregroundStyle(.secondary);Button("重试 K 线") { Task { await load() } } } }
                     else { ProgressView("正在读取 K 线…").frame(maxWidth:.infinity,minHeight:220) }
                 }
                 ResearchCard {
@@ -76,10 +75,7 @@ struct MobileStockDetail:View {
         .task(id:manifest.generation+stock.id) { await load() }
     }
     private func load() async {
-        chartError=nil
-        do { candles=try await store.candles(manifest,code:stock.id) }
-        catch is CancellationError {}
-        catch { chartError=error.localizedDescription }
+        await chart.load(key:manifest.generation+stock.id) { try await store.chartData(manifest,code:stock.id) }
     }
     private func condition(_ title:String,detail:String,passed:Bool)->some View {
         HStack(alignment:.top,spacing:12) { Image(systemName:passed ? "checkmark.circle.fill":"circle").foregroundStyle(passed ? MobileTheme.teal:.secondary);VStack(alignment:.leading,spacing:4) { Text(title).font(.subheadline.weight(.medium));Text(detail).font(.caption).foregroundStyle(.secondary) };Spacer() }.accessibilityElement(children:.combine).accessibilityLabel("\(title)，\(passed ? "满足":"未满足")，\(detail)")

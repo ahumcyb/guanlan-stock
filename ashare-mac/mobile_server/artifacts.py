@@ -92,6 +92,12 @@ def publish(outputs,root,data_revision):
             manifests[strategy]=dict(schema_version=1,generation=generation,strategy=strategy,as_of=asof,
                 report_bytes=len(data),report_sha256=hashlib.sha256(data).hexdigest(),stock_count=len(codes),data_revision=data_revision)
             atomic_json(destination/'manifest.json',manifests[strategy])
+        from engine.chart_data import read_extended,MAX_COMPRESSED
+        extended_sources=[folder.parent/'charts-extended' for folder in chart_sources]
+        has_extended=any(folder.exists() for folder in extended_sources)
+        if has_extended and not all(folder.is_dir() and not folder.is_symlink() for folder in extended_sources):
+            raise ValueError('Strategy extended charts are not aligned')
+        if has_extended:(stage/'charts-extended').mkdir()
         (stage/'charts').mkdir()
         for code in sorted(codes):
             source=checked_file(chart_sources[0],chart_sources[0]/(code+'.json'),MAX_CHART)
@@ -102,6 +108,14 @@ def publish(outputs,root,data_revision):
             candles=json.loads(source.read_text())
             if not isinstance(candles,list) or not 1<=len(candles)<=120:raise ValueError('Invalid chart')
             shutil.copyfile(source,stage/'charts'/(code+'.json'))
+            if has_extended:
+                source=checked_file(extended_sources[0],extended_sources[0]/(code+'.json.gz'),MAX_COMPRESSED)
+                digest=hashlib.sha256(source.read_bytes()).digest()
+                for folder in extended_sources[1:]:
+                    other=checked_file(folder,folder/(code+'.json.gz'),MAX_COMPRESSED)
+                    if hashlib.sha256(other.read_bytes()).digest()!=digest:raise ValueError('Extended strategy charts differ')
+                read_extended(source,code,asof,data_revision,candles)
+                shutil.copyfile(source,stage/'charts-extended'/(code+'.json.gz'))
         for file in stage.rglob('*'):file.chmod(0o750 if file.is_dir() else 0o640)
         stage.chmod(0o750)
         os.rename(stage,releases/generation)

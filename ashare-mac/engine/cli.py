@@ -156,13 +156,15 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         try:
             progress('生成 K 线、研究报告和可导出的选股表…')
             chart_cols = ['trade_date','adj_open','adj_high','adj_low','price','ma10','ma20','ma60','vol']
-            tails = signals.groupby('ts_code',sort=False).tail(120)
+            from .chart_data import make_extended, write_extended
+            tails = signals.groupby('ts_code',sort=False).tail(500)
             for code, group in tails.groupby('ts_code',sort=False):
-                chart = group[chart_cols].copy()
+                chart = group.tail(120)[chart_cols].copy()
                 scale = float(group.close.iloc[-1]/group.price.iloc[-1])
                 for c in chart_cols[1:-1]: chart[c] *= scale
                 chart.columns = ['date','open','high','low','close','ma10','ma20','ma60','volume']
                 (stage/'charts'/f'{code}.json').write_text(json.dumps(records(chart),separators=(',',':')),encoding='utf-8')
+                write_extended(stage/'charts-extended'/f'{code}.json.gz',make_extended(group,code,asof,data_revision))
             atomic_json(stage/'report.json',report)
             csv = stocks[stocks.state=='入选'].sort_values('rank').copy()
             csv.rename(columns={'ts_code':'代码','name':'名称','industry':'行业','trade_date':'信号日期',

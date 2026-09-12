@@ -195,7 +195,11 @@ struct DailySummaryView:View {
                         if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(Palette.amber) }
                         if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(Palette.muted) }
                         DisclosureGroup("逐股结算") {
-                            ForEach(group.rows) { row in HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(row.returnPct.map(dailyChange) ?? (row.reason ?? "未结算")) }.font(.system(size:11)).padding(.top,5) }
+                            ForEach(group.rows) { row in
+                                ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,focus:performance.signalDate.map{ChartFocus(date:$0,price:row.previousClose,label:"昨日精选")},through:performance.evaluationDate)) {
+                                    HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(row.returnPct.map(dailyChange) ?? (row.reason ?? "未结算"));Image(systemName:"chart.xyaxis.line").foregroundStyle(Palette.teal) }.font(.system(size:11)).padding(.top,5)
+                                }
+                            }
                         }.font(.system(size:11))
                     }.padding(.vertical,5)
                 }
@@ -243,6 +247,10 @@ struct DailySummaryView:View {
                                             HStack { Text(row.name);Text(String(row.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text("今日 "+(row.returnPct.map(dailyChange) ?? "未结算")).foregroundStyle(row.returnPct.map{$0>=0 ? Palette.up:Palette.down} ?? Palette.muted);Text("提醒价至今收 "+(row.signalReturnPct.map(dailyChange) ?? "—")) }
                                             Text("提醒价 \(decimal(row.signalPrice)) · 昨收 \(decimal(row.previousClose)) · 今收 \(decimal(row.currentClose)) · 行情 \(dailyTime(row.quoteAt))").foregroundStyle(Palette.muted)
                                             if let reason=row.reason { Text(reason).foregroundStyle(Palette.amber) }
+                                            ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,
+                                                focus:ChartFocus(date:ChartDate.key(Date(timeIntervalSince1970:row.quoteAt)),price:row.signalPrice,label:String(realtimeDate(row.quoteAt).suffix(8))+" 提醒"),through:performance.evaluationDate)) {
+                                                Label("查看K线与提醒价",systemImage:"chart.xyaxis.line").foregroundStyle(Palette.teal)
+                                            }
                                         }.font(.system(size:11)).padding(.top,8)
                                     }
                                 }.font(.caption)
@@ -268,7 +276,11 @@ struct DailySummaryView:View {
             Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.system(size:11)).foregroundStyle(Palette.muted)
             if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.system(size:11)).foregroundStyle(Palette.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.system(size:12)).foregroundStyle(Palette.muted) }
-            ForEach(strategy.picks) { stock in HStack { Text(stock.name);Text(String(stock.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(decimal(stock.close));Text(dailyChange(stock.change)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down) }.font(.system(size:12)) }
+            ForEach(strategy.picks) { stock in
+                ChartLink(target:ChartTarget(code:stock.tsCode,name:stock.name,focus:report.map{ChartFocus(date:$0.date,price:stock.close,label:"本日新选")},through:report?.date)) {
+                    HStack { Text(stock.name);Text(String(stock.tsCode.prefix(6))).foregroundStyle(Palette.muted);Spacer();Text(decimal(stock.close));Text(dailyChange(stock.change)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down);Image(systemName:"chart.xyaxis.line").foregroundStyle(Palette.teal) }.font(.system(size:12))
+                }
+            }
         } }
     }
 }

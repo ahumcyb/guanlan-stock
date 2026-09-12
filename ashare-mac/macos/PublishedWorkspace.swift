@@ -3,11 +3,11 @@ import Foundation
 extension AppStore {
     @discardableResult func loadPublishedReport()->Bool {
         do {
-            guard let saved=try publishedCache.load(strategy) else { report=nil;publishedSnapshot=nil;candles=[];return false }
+            guard let saved=try publishedCache.load(strategy) else { report=nil;publishedSnapshot=nil;chartLoader.reset();return false }
             publishedSnapshot=saved;report=saved.report
             if !saved.report.stocks.contains(where:{$0.id==selection}) { selection=saved.report.stocks.first(where:{$0.rank==1})?.id }
             progress="已载入 \(dateText(saved.report.asOf)) · 四策略同一发布版本";loadChart();return true
-        } catch { report=nil;publishedSnapshot=nil;selection=nil;candles=[];progress="已同步缓存暂不可读取，等待重新同步";return false }
+        } catch { report=nil;publishedSnapshot=nil;selection=nil;chartLoader.reset();progress="已同步缓存暂不可读取，等待重新同步";return false }
     }
 
     func synchronizePublished() async {
@@ -53,24 +53,13 @@ extension AppStore {
         await favoriteReplica.synchronize(api);favorites=favoriteReplica.codes;favoritesMessage=favoriteReplica.message
     }
 
-    func loadPublishedChart() async {
-        guard let code=selection,let snapshot=publishedSnapshot else { return }
-        let manifest=snapshot.manifest
-        do {
-            let bars:[Candle]
-            if let cached=try? publishedCache.loadChart(manifest,code:code) { bars=cached }
-            else {
-                guard let api=publishedAPI else { throw MobileFailure.server("连接服务器后可读取 K 线") }
-                let data=try await api.request("/v1/reports/\(manifest.strategy)/\(manifest.generation)/charts/\(code).json",limit:128*1024)
-                bars=try publishedCache.saveChart(data,manifest:manifest,code:code)
-            }
-            guard publishedMode,selection==code,publishedSnapshot?.manifest==manifest else { return };candles=bars
-        } catch { if selection==code { chartError=error.localizedDescription } }
+    func chartData(for target:ChartTarget) async throws -> ChartDataset {
+        try await latestChartDataset(code:target.code,through:target.through,cache:publishedCache,api:publishedAPI,fallback:publishedSnapshot?.manifest)
     }
 
     func setLocalResearch(_ value:Bool) {
         guard !busy else { return };localResearch=value;UserDefaults.standard.set(value,forKey:"independentLocalResearch")
-        report=nil;selection=nil;candles=[]
+        report=nil;selection=nil;chartLoader.reset()
         if publishedMode { _=loadPublishedReport();Task { await synchronizePublished() } }
         else if !loadReport() { run(update:false) }
     }

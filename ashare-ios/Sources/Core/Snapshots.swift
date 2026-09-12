@@ -140,6 +140,64 @@ final class OfflineCache {
         for file in sorted.dropFirst(100) { try? FileManager.default.removeItem(at:file) }
         return candles
     }
+    func extendedChartURL(_ manifest:MobileManifest,code:String) throws -> URL {
+        try manifest.validate();guard validStockCode(code) else { throw MobileFailure.invalidData }
+        return root.appendingPathComponent("chartx-"+manifest.generation+"-"+code+".json")
+    }
+    func loadExtendedChart(_ manifest:MobileManifest,code:String) throws -> ChartDataset? {
+        let path=try extendedChartURL(manifest,code:code)
+        guard FileManager.default.fileExists(atPath:path.path) else { return nil }
+        let info=try path.resourceValues(forKeys:[.isSymbolicLinkKey,.isRegularFileKey,.fileSizeKey])
+        guard info.isSymbolicLink==false,info.isRegularFile==true,(info.fileSize ?? Int.max)<=512*1024 else { throw MobileFailure.invalidData }
+        return try ChartDataset.decode(Data(contentsOf:path),code:code,asOf:manifest.asOf,revision:manifest.dataRevision)
+    }
+    func saveExtendedChart(_ data:Data,manifest:MobileManifest,code:String) throws -> ChartDataset {
+        let path=try extendedChartURL(manifest,code:code)
+        let value=try ChartDataset.decode(data,code:code,asOf:manifest.asOf,revision:manifest.dataRevision)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        try data.write(to:path,options:.atomic)
+        let files=try FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:[.contentModificationDateKey]).filter{$0.lastPathComponent.hasPrefix("chartx-")}
+        let sorted=files.sorted{((try? $0.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast)>((try? $1.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast)}
+        for file in sorted.dropFirst(100) { try? FileManager.default.removeItem(at:file) }
+        return value
+    }
+}
+
+func requestChartDataset(manifest:MobileManifest,code:String,cache:OfflineCache,api:MobileAPI?) async throws -> ChartDataset {
+    try manifest.validate();guard validStockCode(code) else { throw MobileFailure.invalidData }
+    if let saved=try? cache.loadExtendedChart(manifest,code:code) { return saved }
+    let legacy=try? cache.loadChart(manifest,code:code)
+    func old(_ bars:[Candle])->ChartDataset { ChartDataset.legacy(bars,code:code,asOf:manifest.asOf,revision:manifest.dataRevision) }
+    guard let api else {
+        if let legacy { return old(legacy) }
+        throw MobileFailure.server("连接服务器后可下载这只股票的K线。")
+    }
+    do {
+        let bytes=try await api.request("/v1/reports/\(manifest.strategy)/\(manifest.generation)/charts-extended/\(code).json",limit:512*1024)
+        try Task.checkCancellation()
+        return try cache.saveExtendedChart(bytes,manifest:manifest,code:code)
+    } catch MobileFailure.expiredSnapshot {
+        if let legacy { return old(legacy) }
+        let bytes=try await api.request("/v1/reports/\(manifest.strategy)/\(manifest.generation)/charts/\(code).json",limit:128*1024)
+        try Task.checkCancellation()
+        return old(try cache.saveChart(bytes,manifest:manifest,code:code))
+    } catch let error as URLError {
+        if error.code != .cancelled,let legacy { return old(legacy) }
+        throw error
+    }
+}
+
+func latestChartDataset(code:String,through:String?,cache:OfflineCache,api:MobileAPI?,fallback:MobileManifest?) async throws -> ChartDataset {
+    var manifest=fallback
+    if let api {
+        do {
+            let data=try await api.request("/v1/reports/leaders/current",limit:65536)
+            let latest=try mobileDecoder().decode(MobileManifest.self,from:data);try latest.validate();manifest=latest
+        } catch let error as URLError { if error.code == .cancelled || fallback==nil { throw error } }
+    }
+    guard let manifest else { throw MobileFailure.server("请先同步已发布的行情结果。") }
+    if let through,manifest.asOf<through { throw MobileFailure.server("当前K线版本尚未覆盖这篇总结的日期，请同步结果后重试。") }
+    return try await requestChartDataset(manifest:manifest,code:code,cache:cache,api:api)
 }
 
 func synchronizePublishedBundle(_ api:MobileAPI,cache:OfflineCache,manifests:[String:MobileManifest]) async throws {
@@ -165,6 +223,8 @@ func decodeCandles(_ data:Data,asOf:String) throws -> [Candle] {
     guard data.count<=128*1024 else { throw MobileFailure.oversized }
     let candles=try mobileDecoder().decode([Candle].self,from:data)
     guard !candles.isEmpty,candles.count<=120,Set(candles.map(\.date)).count==candles.count,
-          candles.map(\.date)==candles.map(\.date).sorted(),candles.allSatisfy({$0.date<=asOf && $0.low>0 && $0.high >= max($0.open,$0.close) && $0.low<=min($0.open,$0.close) && $0.volume>=0}) else { throw MobileFailure.invalidData }
+          candles.map(\.date)==candles.map(\.date).sorted(),candles.allSatisfy({ChartDate.parse($0.date) != nil && $0.date<=asOf && $0.low>0 && $0.high >= max($0.open,$0.close) && $0.low<=min($0.open,$0.close) && $0.volume>=0
+              && [$0.open,$0.high,$0.low,$0.close,$0.volume].allSatisfy(\.isFinite)
+              && [$0.ma10,$0.ma20,$0.ma60].compactMap({$0}).allSatisfy({$0.isFinite && $0>0})}) else { throw MobileFailure.invalidData }
     return candles
 }

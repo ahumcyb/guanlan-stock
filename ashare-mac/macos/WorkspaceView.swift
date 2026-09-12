@@ -38,10 +38,10 @@ struct WorkspaceView:View {
                 }.font(.system(size:10)).foregroundStyle(Palette.muted).padding(16)
             }.frame(minWidth:460,idealWidth:620)
             if let selected=store.report?.stocks.first(where:{$0.id==store.selection}) {
-                StockDetail(stock:selected).frame(minWidth:330,idealWidth:360,maxWidth:440)
+                StockDetail(stock:selected).frame(minWidth:360,idealWidth:500,maxWidth:.infinity)
             } else {
                 EmptyViewMessage(icon:"chart.xyaxis.line",title:"选择一只股票",message:"在左侧筛选或搜索，查看走势与入选依据。")
-                    .frame(minWidth:330,idealWidth:360,maxWidth:440).background(.white)
+                    .frame(minWidth:360,idealWidth:500,maxWidth:.infinity).background(.white)
             }
         }
         .onChange(of:filtered.map(\.id)) { _,ids in

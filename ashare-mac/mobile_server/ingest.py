@@ -14,6 +14,7 @@ from engine.close_proof import valid_date,verify_package_close
 from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,checked_file,atomic_json,preserved_legacy_generations
 from .queue import PERSISTENT_FIELDS,CONTEXT_FIELDS
 
+MAX_EXPANDED_TOTAL=1024*1024*1024
 
 def member_limit(name):
     parts=PurePosixPath(name).parts
@@ -23,13 +24,15 @@ def member_limit(name):
     if len(parts)==3 and parts[0]=='research' and parts[1] in STRATEGIES and parts[2] in ['report.json','manifest.json']:
         return MAX_REPORT if parts[2]=='report.json' else 65536
     if len(parts)==3 and parts[:2]==('research','charts') and parts[2].endswith('.json') and CODE.fullmatch(parts[2][:-5]):return MAX_CHART
+    if len(parts)==3 and parts[:2]==('research','charts-extended') and parts[2].endswith('.json.gz') and CODE.fullmatch(parts[2][:-8]):return MAX_CHART
     raise ValueError('Unexpected archive entry')
 
 
 def extract(bundle,destination):
     with zipfile.ZipFile(bundle) as archive:
         members=archive.infolist();names=[m.filename for m in members]
-        if len(members)>11000 or len(set(names))!=len(names) or sum(m.file_size for m in members)>512*1024*1024:raise ValueError('Archive limits exceeded')
+        expanded_total=sum(m.file_size for m in members if not m.filename.startswith('research/charts-extended/'))
+        if len(members)>21000 or len(set(names))!=len(names) or sum(m.file_size for m in members)>512*1024*1024:raise ValueError('Archive limits exceeded')
         for entry in members:
             mode=entry.external_attr>>16
             if entry.is_dir() or stat.S_ISLNK(mode) or entry.flag_bits&1 or entry.file_size>member_limit(entry.filename):raise ValueError('Unsafe archive entry')
@@ -69,12 +72,22 @@ def extract(bundle,destination):
         if codes is not None and current!=codes:raise ValueError('Research universes differ')
         codes=current
     charts=destination/'research/charts'
+    extended=destination/'research/charts-extended'
+    def consume(size):
+        nonlocal expanded_total
+        expanded_total+=size
+        if expanded_total>MAX_EXPANDED_TOTAL:raise ValueError('Nested chart expansion limit exceeded')
+    if extended.exists() and {p.name for p in extended.iterdir()}!={code+'.json.gz' for code in codes}:
+        raise ValueError('Missing or unexpected extended charts')
     if {p.name for p in charts.iterdir()}!={code+'.json' for code in codes}:raise ValueError('Missing or unexpected charts')
     for code in codes:
         candles=json.loads(checked_file(destination,charts/(code+'.json'),MAX_CHART).read_text())
         if not isinstance(candles,list) or not 1<=len(candles)<=120:raise ValueError('Invalid chart')
         dates=[bar['date'] for bar in candles]
         if dates!=sorted(set(dates)) or any(date>market['as_of'] for date in dates):raise ValueError('Invalid chart dates')
+        if extended.exists():
+            from engine.chart_data import read_extended
+            read_extended(checked_file(destination,extended/(code+'.json.gz'),MAX_CHART),code,market['as_of'],market['revision'],candles,consume)
     return metadata
 
 
