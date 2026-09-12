@@ -1,6 +1,6 @@
 # 观澜选股 · iPhone / iPad
 
-iOS 1.9.0（13）已完成[交互 K 线升级](../ashare-mac/docs/KLINE_UPGRADE.md)：日/周/月周期、完整量价读数、大图、缩放浏览、MA与MACD/RSI、提醒和日报逐股定位。模拟器与真机SDK构建通过；当前免费签名已到期，需在 Xcode 恢复账号后续签安装，尚未安装这个版本。详见[验收记录](../ashare-mac/docs/KLINE_VERIFICATION_20260912.md)。
+iOS 1.9.0（13）已完成[交互 K 线升级](../ashare-mac/docs/KLINE_UPGRADE.md)：日/周/月周期、完整量价读数、大图、缩放浏览、MA与MACD/RSI、提醒和日报逐股定位。已通过同一 Wi-Fi 安装到配对 iPhone，设备回读确认1.9.0（13）并成功启动；签名已续至2026年9月19日。模拟器大图与横屏布局验证通过。详见[验收记录](../ashare-mac/docs/KLINE_VERIFICATION_20260912.md)。
 
 iOS 1.8.0（12）新增[昨日实时策略的今日收益](../ashare-mac/docs/REALTIME_DAILY_VERIFICATION_20260910.md)，支持两个收益口径、来源轮次、逐股价格与未结算说明。已在配对 iPhone 安装并启动，设备回读确认版本为 1.8.0（12）；原生模型和历史兼容测试已通过。Mac 主节点继续[达塔批量初筛＋D6逐股复核](../ashare-mac/docs/D101_BATCH.md)，服务器离线接管保留原行情备用；后台总结不依赖手机运行。
 
