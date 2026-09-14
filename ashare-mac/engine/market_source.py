@@ -18,6 +18,7 @@ class DattaMarketProvider:
         self.batch_enabled=settings['quote_mode']=='d101_batch'
         self.batch_base_url=settings['base_url']
         self.reference_factory=reference_factory;self._reference=None;self._basic=None;self._daily={}
+        self.reference_warning=None
         self.quote_diagnostics={};self.index_diagnostics={}
 
     @property
@@ -28,10 +29,18 @@ class DattaMarketProvider:
     def prepare_days(self,dates,known_codes=()):
         if not dates:return
         for date in dates:date_value(date)
-        self._basic=self.reference.fetch('stock_basic',list_status='L')
-        if 'ts_code' not in self._basic or self._basic.ts_code.duplicated().any():
-            raise DattaError('参考股票名录缺少有效主键')
-        codes=sorted(set(known_codes)|set(self._basic.ts_code))
+        self._basic=None;self.reference_warning=None
+        try:
+            basic=self.reference.fetch('stock_basic',list_status='L')
+            if 'ts_code' not in basic or basic.ts_code.duplicated().any():
+                raise DattaError('参考股票名录缺少有效主键')
+            self._basic=basic
+        except ValueError:
+            if not known_codes:raise
+            self.reference_warning='股票名录更新未完成，本轮价格仅覆盖已知股票；新上市或更名资料可能缺失。'
+        codes=sorted(set(known_codes)|(set(self._basic.ts_code) if self._basic is not None else set()))
+        if callable(getattr(self._reference,'set_known_codes',None)):
+            self._reference.set_known_codes(codes)
         if any(not isinstance(code,str) or not CODE.fullmatch(code) for code in codes):
             raise DattaError('参考股票名录包含无效代码')
         rows=self.client.collect(codes,lambda code:self.client.history(code,'DAY',min(dates),max(dates)),budget=900)
@@ -47,6 +56,11 @@ class DattaMarketProvider:
         if api=='stock_basic' and params=={'list_status':'L'} and self._basic is not None:
             return self._basic.copy()
         return self.reference.fetch(api,**params)
+
+    def fetch_factors(self,date,codes):
+        if callable(getattr(self.reference,'fetch_factors',None)):
+            return self.reference.fetch_factors(date,codes)
+        return self.reference.fetch('adj_factor',trade_date=date)
 
     def get(self,api,**params):
         if api=='rt_min_daily':

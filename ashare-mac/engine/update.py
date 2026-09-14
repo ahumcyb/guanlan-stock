@@ -101,6 +101,8 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
                 raise ValueError('收盘总结须在交易日 16:10 后重新核验行情')
         status('读取本地覆盖范围…')
         datasets = {k: read_dataset(root, overlay, k) for k in FIELDS}
+        if callable(getattr(client,'set_known_codes',None)):
+            client.set_known_codes(datasets['daily'].ts_code.unique().tolist())
         by_day = {k: {d: g for d, g in f.groupby('trade_date')} for k, f in datasets.items()}
         known_counts=datasets['daily'].groupby('trade_date').size().sort_index()
         complete_dates=set(full_market_dates(known_counts))
@@ -119,7 +121,7 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
         closing_proofs={}
         preparation_error=None
         if needed and callable(getattr(client,'prepare_days',None)):
-            status('从达塔读取待核验日期的股票日线…')
+            status('从'+provider_name+'读取待核验日期的股票日线…')
             try:client.prepare_days(needed,known_codes=datasets['daily'].ts_code.unique().tolist())
             except ValueError as error:preparation_error=str(error)
 
@@ -140,7 +142,10 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
                         # This ProMax deployment's fields-filtered historical pages
                         # were observed to overlap; request defaults and project
                         # canonical columns in validate() after completeness checks.
-                        remote = client.fetch(k, trade_date=date)
+                        if k=='adj_factor' and callable(getattr(client,'fetch_factors',None)):
+                            remote=client.fetch_factors(date,frames['daily'].ts_code.tolist())
+                        else:
+                            remote = client.fetch(k, trade_date=date)
                         minimum=minimum_market_rows(known_counts,date)
                         if k == 'daily' and len(remote) < minimum:
                             raise ValueError(f'日线仅 {len(remote)} 行，低于近期覆盖阈值 {minimum}，保留旧数据')
@@ -176,7 +181,7 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
         except ValueError as e:
             failures.append({'date':'stock_basic','error':str(e)})
             status(f'股票列表保留本地版本：{e}')
-        result = {'through': dates[-1], 'updated_days': published, 'checked_sessions': len(dates),
+        result = {'reference_warning':getattr(client,'reference_warning',None), 'through': dates[-1], 'updated_days': published, 'checked_sessions': len(dates),
                   'completed_at': now.isoformat(), 'provider': provider_name,
                   'validation': 'partial' if failures else 'ok', 'failures':failures}
         if force_latest:

@@ -128,8 +128,10 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         if incomplete: warnings.insert(0,'以下日期截面覆盖不足，已从信号计算排除：'+', '.join(incomplete))
         update_file = overlay/'last_update.json'
         last_update = json.loads(update_file.read_text()) if update_file.exists() else None
+        if last_update and last_update.get('reference_warning'):
+            warnings.insert(0,last_update['reference_warning'])
         if last_update and last_update.get('failures'):
-            warnings.insert(0, '上次 ProMax 更新仍有缺口：'+', '.join(f['date'] for f in last_update['failures']))
+            warnings.insert(0, '上次行情更新仍有缺口：'+', '.join(f['date'] for f in last_update['failures']))
         breadth = float(latest.breadth.iloc[0])
         sources = []
         for kind in ['daily','adj_factor','stk_limit']:
