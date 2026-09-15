@@ -211,9 +211,14 @@ class DattaClient:
             except DattaError:
                 raise DattaUnavailable('达塔客户端数据端未连接，请确认客户端已启动并登录') from None
         def bounded(code):
-            if time.monotonic()-start>=budget:
-                raise DattaError('达塔采集超过本轮时限')
-            return fetch(code)
+            for attempt in range(2):
+                if time.monotonic()-start>=budget:
+                    raise DattaError('达塔采集超过本轮时限')
+                try:return fetch(code)
+                except DattaUnavailable:raise
+                except DattaError:
+                    if attempt:raise
+                    time.sleep(.15)
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             futures={pool.submit(bounded,code):code for code in codes}
             for future in as_completed(futures):

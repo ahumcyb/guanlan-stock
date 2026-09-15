@@ -141,6 +141,7 @@ class Service:
                     raise Failure(400,'INVALID_BODY','Invalid source lease')
                 if parts[3]=='poll':return 200,store.poll('mac',token)
                 if parts[3]=='activate':return 200,{'accepted':store.activate('mac',token)}
+                if parts[3]=='deactivate':return 200,{'accepted':store.deactivate('mac',token)}
                 if parts[3]=='release':return 200,{'accepted':store.release('mac',token)}
             if parts==['v1','worker','heartbeat'] and set(value) in [set(),{'job_id','lease'}]:
                 if value and (not canonical_uuid(value['job_id']) or not isinstance(value['lease'],str) or not re.fullmatch(r'[a-f0-9]{64}',value['lease'])):raise Failure(400,'INVALID_BODY','Invalid execution lease')

@@ -60,24 +60,35 @@ def serve(root,market):
                     fail(queue,job,'备用计算超时或失去执行权限，旧结果已保留')
                 if process.poll() is not None:
                     selector.close();process.stdout.close()
+                    uploaded=False
                     if process.returncode==0 and queue.owns(queue.state(),job['id'],job['lease']):
                         bundle=work/'bundle.zip';destination=root/'incoming'/(job['id']+'-'+job['lease']+'.zip')
-                        queue.uploaded(job['id'],job['lease'],sha256_file(bundle),bundle.stat().st_size,bundle,destination)
+                        from .mac_worker import checkpoint_bundle
+                        checkpoint_bundle(bundle,root/'work/.checkpoints',job)
+                        uploaded=queue.uploaded(job['id'],job['lease'],sha256_file(bundle),bundle.stat().st_size,bundle,destination)
                     elif process.returncode!=0:fail(queue,job,'备用计算未完成，旧结果已保留')
-                    shutil.rmtree(work,ignore_errors=True);process=None
+                    from .mac_worker import finish_workspace
+                    finish_workspace(work,job,uploaded);process=None
             state=queue.state()
             if state['status']=='publishing' and queue.owns(state,state['id'],state['lease']):
                 bundle=root/'incoming'/(state['id']+'-'+state['lease']+'.zip')
+                preserved=False;published=False
                 try:
                     activate(bundle,root,market,queue,state)
+                    published=True
                     print('已校验并发布 '+state['executor']+' 的计算结果',flush=True)
                 except Exception as error:
                     # Frames and errno identify failures without logging tokens, upload paths or payloads.
                     frames=' > '.join(f'{frame.name}:{frame.lineno}' for frame in traceback.extract_tb(error.__traceback__))
                     print(f'Publication failed: {type(error).__name__} errno={getattr(error,"errno",None)} at {frames}',flush=True)
                     fail(queue,state,'结果校验或发布未完成，旧报告已保留，请重新计算')
+                    try:
+                        from .mac_worker import checkpoint_bundle
+                        checkpoint_bundle(bundle,root/'failed-publications',state);preserved=True
+                    except (OSError,ValueError):
+                        print('未完成的上传保留在私有接收目录，等待核验',flush=True)
                 finally:
-                    if bundle.exists():bundle.unlink()
+                    if bundle.exists() and (published or preserved):bundle.unlink()
             if process is None and time.monotonic()-started>=60:
                 job=queue.claim('server')
                 if job:
@@ -85,7 +96,7 @@ def serve(root,market):
                     process=subprocess.Popen([sys.executable,'-u','-m','mobile_server.build','--data-root',str(market/'current'),
                         '--overlay',str(root/'overlay'),'--work',str(work),'--action',job['action'],*closing_arguments(job)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,env=job_environment(job))
                     os.set_blocking(process.stdout.fileno(),False);selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
-                    deadline=time.monotonic()+1800;last_renew=time.monotonic();buffer=b''
+                    deadline=time.monotonic()+7200;last_renew=time.monotonic();buffer=b''
                     print('Mac 离线，服务器接管任务',flush=True)
             time.sleep(2)
     finally:

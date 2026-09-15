@@ -180,6 +180,16 @@ class DattaOwnershipTests(unittest.TestCase):
         self.assertFalse(self.store.release('mac', 'bad'))
         self.assertEqual(self.store.public()['owner'], 'mac')
 
+    def test_unconfirmed_client_shutdown_renews_ownership_without_allowing_new_jobs(self):
+        grant=self.store.poll('mac');self.store.activate('mac',grant['token'])
+        for _ in range(6):
+            self.now+=30
+            self.assertTrue(self.store.deactivate('mac',grant['token']))
+            self.assertFalse(self.store.allowed('mac'))
+            self.assertEqual(self.store.poll('server'),{'owner':'mac','phase':'waiting'})
+            self.assertEqual(self.store.public()['epoch'],grant['epoch'])
+
+
 
 if __name__ == '__main__':
     unittest.main()

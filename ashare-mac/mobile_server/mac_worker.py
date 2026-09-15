@@ -27,6 +27,48 @@ class WorkerRequestError(ValueError):
         super().__init__('Worker request returned HTTP '+str(status))
 
 
+def checkpoint_bundle(source,directory,job):
+    """Keep a credential-free-named copy even if later server validation fails."""
+    from engine.snapshot_protocol import sha256_file
+    from .artifacts import atomic_json
+    source=Path(source);directory=Path(directory)
+    if (not canonical_uuid(job['id']) or source.is_symlink() or directory.is_symlink()
+            or not source.is_file() or not 0<source.stat().st_size<=256*1024*1024):raise ValueError('Invalid checkpoint')
+    directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    target=directory/(job['id']+'-'+uuid.uuid4().hex[:12]+'.zip')
+    try:os.link(source,target)
+    except OSError:
+        with target.open('xb') as out,source.open('rb') as data:shutil.copyfileobj(data,out)
+    record={k:job[k] for k in ['action','purpose','expected_as_of','datta_epoch'] if k in job}
+    record.update(job_id=job['id'],created_at=time.time(),bytes=target.stat().st_size,sha256=sha256_file(target))
+    atomic_json(target.with_suffix('.json'),record)
+    retained=[p for p in directory.glob('*.zip') if re.fullmatch(r'[a-f0-9-]{36}-[a-f0-9]{12}\.zip',p.name)
+              and not p.is_symlink() and p.with_suffix('.json').is_file() and not p.with_suffix('.json').is_symlink()]
+    retained.sort(key=lambda p:p.with_suffix('.json').stat().st_mtime,reverse=True)
+    for old in retained[3:]:
+        if time.time()-old.with_suffix('.json').stat().st_mtime>86400:
+            old.unlink();old.with_suffix('.json').unlink()
+    return target
+
+
+def finish_workspace(work,job,uploaded):
+    if uploaded:
+        shutil.rmtree(work,ignore_errors=True);return
+    from .artifacts import atomic_json
+    try:
+        record={k:job[k] for k in ['action','expected_as_of','purpose','datta_epoch'] if k in job}
+        record.update(job_id=job['id'],failed_at=time.time())
+        marker=work/'.failed-job.json';atomic_json(marker,record);marker.chmod(0o600)
+        failed=[p for p in work.parent.iterdir() if canonical_uuid(p.name) and p.is_dir() and not p.is_symlink()
+                and (p/'.failed-job.json').is_file() and not (p/'.failed-job.json').is_symlink()]
+        failed.sort(key=lambda p:(p/'.failed-job.json').stat().st_mtime,reverse=True)
+        for old in failed[3:]:
+            if time.time()-(old/'.failed-job.json').stat().st_mtime>86400:shutil.rmtree(old)
+        print('未发布的中间结果已保留，可核验后恢复；旧报告未替换',flush=True)
+    except (OSError,ValueError):
+        print('中间结果保留在工作目录，清理记录未完成',flush=True)
+
+
 class WorkerClient:
     def __init__(self,config):
         if config['endpoint']!='https://106.14.125.189' or not re.fullmatch('[a-f0-9]{64}',config['token']):raise ValueError('Invalid worker connection')
@@ -56,7 +98,7 @@ class WorkerClient:
 def run_job(client,config,job):
     if not canonical_uuid(job.get('id')) or not re.fullmatch('[a-f0-9]{64}',job.get('lease','')) or job.get('action') not in ['recompute','refresh']:raise ValueError('Invalid server job')
     root=Path(config['workspace']).resolve();root.mkdir(parents=True,exist_ok=True)
-    work=root/str(uuid.uuid4());work.mkdir();stop=threading.Event();lost=threading.Event()
+    work=root/str(uuid.uuid4());work.mkdir(mode=0o700);stop=threading.Event();lost=threading.Event()
     claim={'job_id':job['id'],'lease':job['lease']}
     def renew():
         last_success=time.monotonic()
@@ -66,21 +108,26 @@ def run_job(client,config,job):
             except Exception:
                 if time.monotonic()-last_success>70:lost.set();return
     thread=threading.Thread(target=renew,daemon=True);thread.start()
-    process=None
+    process=None;uploaded=False;awake=None
     def execute(arguments):
         nonlocal process
         process=subprocess.Popen([sys.executable,'-u','-m',*map(str,arguments)],start_new_session=True,env=job_environment(job))
-        deadline=time.monotonic()+1800
+        deadline=time.monotonic()+3600
         while process.poll() is None:
             if lost.wait(.5) or time.monotonic()>deadline:raise LostLease()
         if process.returncode:raise ValueError('Computation failed')
         process=None
     try:
+        if sys.platform=='darwin':
+            try:awake=subprocess.Popen(['/usr/bin/caffeinate','-i','-w',str(os.getpid())],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            except OSError:pass
         print('Mac 已接管手机任务：'+job['action'],flush=True)
         execute(['engine.remote','--config',config['ssh_config'],'--cache',root/'market'])
         execute(['mobile_server.build','--data-root',root/'market/current','--overlay',root/'overlay','--work',work,'--action',job['action'],*closing_arguments(job)])
         if lost.is_set():raise LostLease()
+        checkpoint_bundle(work/'bundle.zip',root/'.checkpoints',job)
         client.request('/v1/worker/uploads/'+job['id'],upload=work/'bundle.zip',lease=job['lease'])
+        uploaded=True
         try:
             from engine.remote import cache_built_snapshot
             revision=json.loads((work/'packages/latest.json').read_text())['revision']
@@ -99,7 +146,11 @@ def run_job(client,config,job):
             os.killpg(process.pid,signal.SIGTERM)
             try:process.wait(timeout=5)
             except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
-        shutil.rmtree(work,ignore_errors=True)
+        if awake is not None and awake.poll() is None:
+            awake.terminate()
+            try:awake.wait(timeout=5)
+            except subprocess.TimeoutExpired:awake.kill();awake.wait()
+        finish_workspace(work,job,uploaded)
 
 
 def main(config):

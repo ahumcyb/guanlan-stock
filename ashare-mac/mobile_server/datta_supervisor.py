@@ -1,5 +1,7 @@
 """Own the native client lifecycle; only start/login after a server grant."""
 import argparse
+import http.client
+from urllib.error import HTTPError
 import fcntl
 import json
 import os
@@ -75,6 +77,28 @@ class NativeClient:
         raise ValueError('Datta session unavailable')
 
 
+def transient_transport(error):
+    status=getattr(error,'status',getattr(error,'code',None))
+    if isinstance(status,int):return status==429 or 500<=status<=599
+    return isinstance(error,(OSError,http.client.HTTPException))
+
+
+def transport_grace(error,stage,valid_until,alive,now):
+    return stage in ['poll','status','activate'] and alive and valid_until-now>10 and transient_transport(error)
+
+
+def log_event(event,node,stage,epoch=None,error=None,client=None):
+    value=dict(event=event,node=node,stage=stage,time=time.time(),epoch=epoch)
+    if error is not None:
+        value['error_type']=type(error).__name__
+        status=getattr(error,'status',getattr(error,'code',None))
+        if isinstance(status,int):value['http_status']=status
+    if client is not None:
+        value['client']={k:client.get(k) is True for k in ['exeConnected','isLoggedIn','isVerified','running']}
+    try:print(json.dumps(value,separators=(',',':')),flush=True)
+    except OSError:pass
+
+
 def serve(config):
     node=config['node'];receipt=Path(config['receipt']);receipt.parent.mkdir(parents=True,exist_ok=True)
     fd=os.open(receipt.with_suffix('.lock'),os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
@@ -90,47 +114,87 @@ def serve(config):
             if action=='poll':return store.poll('server',token)
             return {'accepted':getattr(store,action)('server',token)}
     native=NativeClient(config);stop=threading.Event();token=None
-    def invalidate():atomic_json(receipt,{'phase':'waiting','pid':os.getpid()})
+    valid_until=0;restart_at=0;failures=0;epoch=None;shutdown_pending=False
+    def invalidate():
+        try:atomic_json(receipt,{'phase':'waiting','pid':os.getpid()})
+        except OSError:
+            # A broken/full filesystem must not prevent native process cleanup.
+            try:receipt.unlink(missing_ok=True)
+            except OSError:pass
+            log_event('datta_receipt_unavailable',node,'receipt',epoch)
     def shutdown(*_):stop.set()
     signal.signal(signal.SIGTERM,shutdown);signal.signal(signal.SIGINT,shutdown)
     try:
         invalidate();native.stop()
         while not stop.is_set():
+            stage='poll'
             try:
+                if shutdown_pending:
+                    stage='shutdown';native.stop();shutdown_pending=False
+                stage='poll'
                 before=shared_clock();grant=call('poll',token)
                 if grant.get('token') is None or grant.get('phase')=='draining':
-                    invalidate()
+                    invalidate();valid_until=0
                     if token:
-                        native.stop();call('release',token);token=None
+                        stage='shutdown';shutdown_pending=True;native.stop();shutdown_pending=False;call('release',token);token=None
+                        log_event('datta_released',node,stage,epoch)
                 else:
-                    activating=token is None
-                    if activating:
-                        token=grant['token'];native.start()
-                        # Login may take seconds. Revalidate before exposing it.
-                        before=shared_clock()
-                        grant=call('poll',token)
+                    if token is None:token=grant['token']
+                    epoch=grant['epoch']
+                    if native.process is None:
+                        if shared_clock()<restart_at:
+                            stop.wait(5);continue
+                        stage='start';native.start()
+                        before=shared_clock();stage='poll';grant=call('poll',token)
                         if grant.get('token')!=token or grant.get('phase')=='draining':raise ValueError('Source ownership changed')
-                    state=admin('status')
+                    stage='status';state=admin('status')
                     if not all(state.get(k) for k in ['exeConnected','isLoggedIn','isVerified','running']):
+                        log_event('datta_client_unready',node,stage,epoch,client=state)
                         raise ValueError('Datta session lost')
-                    # A short local receipt expires well before the 90s remote
-                    # lease, including a delayed/failed network response.
                     if shared_clock()-before>40:raise ValueError('Source renewal delayed')
-                    atomic_json(receipt,dict(phase='active',clock='system_monotonic_v1',node=node,epoch=grant['epoch'],pid=os.getpid(),
-                        boot_epoch=time.time()-shared_clock(),valid_until_monotonic=before+45))
-                    if activating and not call('activate',token)['accepted']:raise ValueError('Source activation refused')
-            except Exception:
-                invalidate()
-                try:native.stop()
-                except Exception:
-                    # Without confirmed shutdown do not acknowledge handoff.
-                    print('达塔客户端尚未确认退出，保留交接等待',flush=True);stop.wait(5);continue
+                    stage='receipt';next_valid_until=before+45
+                    atomic_json(receipt,dict(phase='active',clock='system_monotonic_v1',node=node,epoch=epoch,pid=os.getpid(),
+                        boot_epoch=time.time()-shared_clock(),valid_until_monotonic=next_valid_until))
+                    valid_until=next_valid_until
+                    if grant['phase'] in ['reserved','recovering']:
+                        stage='activate'
+                        if not call('activate',token)['accepted']:raise ValueError('Source activation refused')
+                        log_event('datta_active',node,stage,epoch)
+                    failures=0
+            except Exception as error:
+                alive=native.process is not None and native.process.poll() is None
+                if token and transport_grace(error,stage,valid_until,alive,shared_clock()):
+                    # Keep the ORIGINAL bounded receipt; never extend a lease
+                    # using a failed request. One brief outage must not discard
+                    # a long computation whose data is already sealed.
+                    log_event('datta_transport_retry',node,stage,epoch,error)
+                    stop.wait(5);continue
+                log_event('datta_recovering',node,stage,epoch,error)
+                invalidate();valid_until=0;shutdown_pending=True
                 if token:
-                    try:call('release',token)
+                    try:call('deactivate',token)
                     except Exception:pass
+                try:
+                    native.stop();shutdown_pending=False
+                except Exception as shutdown_error:
+                    log_event('datta_shutdown_pending',node,'shutdown',epoch,shutdown_error)
+                    stop.wait(5);continue
+                failures+=1;restart_at=shared_clock()+min(300,5*2**min(failures,6))
+                if token:
+                    try:
+                        grant=call('poll',token)
+                        if grant.get('token')==token and grant.get('phase')!='draining':
+                            # The same node still owns login. Repair the client
+                            # without changing epoch or cancelling sealed work.
+                            if not call('deactivate',token)['accepted']:raise ValueError('Source repair refused')
+                            stop.wait(5);continue
+                        call('release',token)
+                    except Exception as control_error:
+                        log_event('datta_control_retry',node,'poll',epoch,control_error)
+                        stop.wait(5);continue
                 token=None
-                print('达塔登录权或客户端暂不可用，等待协调后重试',flush=True)
             stop.wait(5)
+
     finally:
         invalidate()
         try:

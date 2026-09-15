@@ -30,7 +30,7 @@ class DattaLeaseStore:
     def read(self):
         if self.path.is_symlink() or self.path.stat().st_size>4096:raise ValueError('Invalid Datta state')
         value=json.loads(self.path.read_text())
-        if (value.get('owner') not in [None,'mac','server'] or value.get('phase') not in ['idle','reserved','active','draining']
+        if (value.get('owner') not in [None,'mac','server'] or value.get('phase') not in ['idle','reserved','active','recovering','draining']
                 or type(value.get('epoch')) is not int):raise ValueError('Invalid Datta state')
         return value
 
@@ -79,8 +79,21 @@ class DattaLeaseStore:
     def activate(self,node,token):
         with self.lock():
             v=self.read()
-            if not self.matches(v,node,token) or v['phase'] not in ['reserved','active']:return False
+            if not self.matches(v,node,token) or v['phase'] not in ['reserved','active','recovering']:return False
             v['phase']='active';self.save(v);return True
+
+    def deactivate(self,node,token):
+        """Pause new claims during local client repair, keeping the node epoch.
+
+        Existing computations may finish using data already acquired. A client
+        restart is not a transfer of login ownership to the other machine.
+        """
+        with self.lock():
+            v=self.read()
+            if not self.matches(v,node,token) or v['phase']=='draining':return False
+            v.update(phase='recovering',lease_until=self.clock()+90)
+            if node=='mac':v['mac_seen']=self.clock()
+            self.save(v);return True
 
     def release(self,node,token):
         with self.lock():
@@ -116,7 +129,7 @@ def epoch_valid(root,node,epoch,now):
     if epoch is None:return not (Path(root)/'jobs/datta-owner.json').exists()
     try:
         value=json.loads((Path(root)/'jobs/datta-owner.json').read_text())
-        return value['epoch']==epoch and value['owner']==node and value['phase']=='active' and value['lease_until']>now
+        return value['epoch']==epoch and value['owner']==node and value['phase'] in ['active','recovering'] and value['lease_until']>now
     except (OSError,ValueError,KeyError,TypeError):return False
 
 

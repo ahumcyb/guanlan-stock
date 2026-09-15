@@ -39,3 +39,13 @@ Linux 使用 `guanlan-datta-owner.service`，原 `guanlan-datta.service` 保持�
 跨进程时钟使用 `clock_gettime(CLOCK_MONOTONIC)`，不能换回这台 Mac Python 3.9 的 `time.monotonic()`（其原点按进程不同）。凭证带时钟版本与启动纪元，旧格式、过期代次或失效进程一律拒绝。
 
 状态：`GET /v1/status` 的 `datta` 字段只返回 owner/phase/epoch/lease_until，不返回令牌。Mac 日志在 `.cache/datta-owner.log`；Linux 由现有服务日志记录状态。手机读取原 API，无需为此次后端修复重新签名安装。
+
+## 中断恢复
+
+短暂的控制网络错误仅在原本机凭证仍有安全余量时重试，不延长失败请求的凭证。客户端需要修复但同节点租约仍有效时进入 `recovering`：暂停新任务，保留原代次，让已完成数据采集的任务继续；确认旧客户端停止后才重启客户端。停止确认期间仍续有效租约，防止旧进程未退出就让另一台登录。
+
+Mac 计算期间以 `caffeinate -i` 防止自动空闲休眠，完成或失败即解除；显式睡眠和关机仍会使节点离线。Mac 完整任务上限为60分钟，较慢的 Linux 备用计算为120分钟，执行与登录租约继续短周期续约。
+
+上传前保存去除 lease 文件名的结果包 checkpoint；发布失败时服务器保留私有副本，不会删除唯一上传文件。未完成工作目录也保留无凭据的恢复标记，保留最近3份并对其他超过24小时的记录清理。副本不会自动绕过验证发布；恢复仍要核对原收盘采集证明、数据版本、四套报告和新领取的有效任务权限。
+
+Linux 旧的 `guanlan-datta.service` 已 mask，避免按旧文档直接启动绕过协调。新入口仅为 `guanlan-datta-owner.service`。

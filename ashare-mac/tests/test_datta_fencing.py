@@ -137,6 +137,19 @@ class DattaFencingTests(unittest.TestCase):
         realtime.calendar(['20260914','20260915']);realtime.pulse('mac')
         self.assertEqual(realtime.claim('server')['datta_epoch'],grant['epoch'])
 
+    def test_local_client_repair_keeps_existing_job_but_blocks_new_claims(self):
+        store=DattaLeaseStore(self.root,lambda:self.now)
+        grant=store.poll('mac');store.activate('mac',grant['token'])
+        queue=JobQueue(self.root/'jobs',lambda:self.now)
+        queue.submit('refresh',identity());job=queue.claim('mac')
+        self.assertTrue(store.deactivate('mac',grant['token']))
+        self.assertFalse(store.allowed('mac'))
+        self.assertTrue(queue.heartbeat(job['id'],job['lease']))
+        self.assertEqual(store.public()['phase'],'recovering')
+        self.assertTrue(store.activate('mac',grant['token']))
+        self.assertEqual(store.public()['epoch'],grant['epoch'])
+        self.assertTrue(queue.uploaded(job['id'],job['lease'],'c'*64,10))
+
     def test_local_receipt_epoch_must_match_the_task_epoch(self):
         receipt = self.root / 'datta-session.json'
         monotonic = time.clock_gettime(time.CLOCK_MONOTONIC)

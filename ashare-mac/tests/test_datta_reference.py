@@ -62,3 +62,25 @@ class DattaReferenceTests(unittest.TestCase):
             provider.prepare_days(['20260909'])
             self.assertEqual(calls,[('20260908','20260909')])
             self.assertEqual(len(provider.fetch('adj_factor',trade_date='20260909')),1)
+
+    def test_transient_per_stock_error_is_retried_without_another_provider(self):
+        from engine.datta import DattaClient
+        attempts=[]
+        def fetch(code):
+            attempts.append(code)
+            if len(attempts)==1:raise DattaError('temporary local transport failure')
+            return {'ts_code':code}
+        client=DattaClient(transport=lambda *args:None)
+        self.assertEqual(client.collect(['000001.SZ'],fetch),[{'ts_code':'000001.SZ'}])
+        self.assertEqual(client.diagnostics['unavailable'],0)
+
+    def test_control_transport_grace_never_extends_or_revives_expired_receipts(self):
+        from mobile_server.datta_supervisor import transport_grace
+        from mobile_server.mac_worker import WorkerRequestError,LostLease
+        self.assertTrue(transport_grace(TimeoutError(),'poll',145,True,120))
+        self.assertTrue(transport_grace(WorkerRequestError(503),'activate',145,True,120))
+        self.assertFalse(transport_grace(TimeoutError(),'poll',145,True,136))
+        self.assertFalse(transport_grace(TimeoutError(),'poll',145,False,120))
+        self.assertFalse(transport_grace(OSError(),'receipt',145,True,120))
+        self.assertFalse(transport_grace(LostLease(),'poll',145,True,120))
+        self.assertFalse(transport_grace(WorkerRequestError(401),'poll',145,True,120))
