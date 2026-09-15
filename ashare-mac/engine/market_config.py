@@ -7,10 +7,9 @@ from .datta import DattaError, validate_base_url
 
 
 def market_configuration():
-    value=dict(schema_version=1,provider='promax',base_url='http://127.0.0.1:8080',workers=24,
-               primary_provider=None,quote_mode='d6',primary_quote_mode=None)
+    value=dict(schema_version=1,provider='datta',base_url='http://127.0.0.1:8080',workers=24,
+               primary_provider=None,quote_mode='d101_batch',primary_quote_mode=None)
     override=os.environ.get('GUANLAN_MARKET_PROVIDER')
-    if override=='promax':return value
     specified=os.environ.get('GUANLAN_MARKET_CONFIG')
     path=Path(specified or Path(__file__).resolve().parents[1]/'settings/market-source.json')
     if specified and not path.is_file():raise DattaError('指定的行情来源配置不存在')
@@ -25,9 +24,9 @@ def market_configuration():
             raise DattaError('行情来源配置字段无效')
         value.update(custom)
     if override:value['provider']=override
-    if type(value['schema_version']) is not int or value['schema_version']!=1 or value['provider'] not in ['promax','datta']:
-        raise DattaError('行情来源配置无效')
-    if value['primary_provider'] not in [None,'promax','datta']:
+    if type(value['schema_version']) is not int or value['schema_version']!=1 or value['provider']!='datta':
+        raise DattaError('行情仅支持达塔，ProMax 已停用，请迁移旧配置')
+    if value['primary_provider'] not in [None,'datta']:
         raise DattaError('优先行情来源配置无效')
     if value['quote_mode'] not in ['d6','d101_batch'] or value['primary_quote_mode'] not in [None,'d6','d101_batch']:
         raise DattaError('批量行情配置无效')

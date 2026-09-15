@@ -20,7 +20,7 @@ Mac 上传结果后，任务进入由服务器负责的发布阶段，有独立�
 
 行情目录和研究目录被 systemd 分别隔离；行情先复制到行情文件系统内的临时 staging，再在该文件系统内切换目录，避免跨挂载点 rename 失败。手机固定请求报告所绑定的图表版本。
 
-手机可点击“重新选股”或“ProMax 更新数据并选股”发起普通任务。开启收盘总结后，交易日 16:10 会自动提交指定当日的更新任务，重新抓取收盘三表并核验版本，再生成总结与提醒。Mac App 的窗口和后台节点分别运行；手机更新发布完成后，Mac App 点“同步服务器”可重新载入同一行情日期。
+手机可点击“重新选股”或“更新数据并选股”发起普通任务。开启收盘总结后，交易日 16:10 会自动提交指定当日的更新任务，重新抓取收盘三表并核验版本，再生成总结与提醒。Mac App 的窗口和后台节点分别运行；手机更新发布完成后，Mac App 点“同步服务器”可重新载入同一行情日期。
 
 ## 本机操作
 
@@ -37,7 +37,7 @@ tail -n 20 .cache/mobile-worker/worker.log
 launchctl bootout "gui/$(id -u)/local.guanlan.compute-worker"
 ```
 
-后台节点连接设置保存在 `settings/mobile-worker.json`，权限必须为 600。Mac 从 Keychain 的 `quanta.promax.api-key` 或环境读取 ProMax 凭据。移动工程后需重新运行安装脚本。
+后台节点连接设置保存在 `settings/mobile-worker.json`，权限必须为 600。行情登录由统一的达塔 supervisor 管理，Mac 优先，Linux 仅在 Mac 失联后接管；详见 [双机登录协调](../../ashare-mac/docs/DATTA_ONLY_V85.md)。移动工程后需重新运行安装脚本。
 
 ## 服务器操作
 

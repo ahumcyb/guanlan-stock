@@ -1,3 +1,4 @@
+from .datta_ownership import job_environment
 """User LaunchAgent: Mac-first computation with renewable, fenced server leases."""
 import argparse
 import base64
@@ -68,7 +69,7 @@ def run_job(client,config,job):
     process=None
     def execute(arguments):
         nonlocal process
-        process=subprocess.Popen([sys.executable,'-u','-m',*map(str,arguments)],start_new_session=True)
+        process=subprocess.Popen([sys.executable,'-u','-m',*map(str,arguments)],start_new_session=True,env=job_environment(job))
         deadline=time.monotonic()+1800
         while process.poll() is None:
             if lost.wait(.5) or time.monotonic()>deadline:raise LostLease()
@@ -106,6 +107,8 @@ def main(config):
     while True:
         try:
             client.request('/v1/worker/heartbeat')
+            from engine.datta_session import require_session
+            require_session()
             result=client.request('/v1/worker/claim')
             if result.get('job'):run_job(client,config,result['job'])
         except KeyboardInterrupt:return

@@ -1,5 +1,6 @@
 """Single job with renewable, fenced leases; Mac has priority over server fallback."""
 import fcntl
+from .datta_ownership import serialize_source
 import hmac
 import json
 import math
@@ -16,7 +17,7 @@ ACTIVE={'queued','running','publishing'}
 CONTEXT_FIELDS={'expected_as_of','purpose'}
 PERSISTENT_FIELDS={'id','request_id','action','created_at'}|CONTEXT_FIELDS
 PUBLIC_FIELDS={'id','status','message','action','created_at','executor'}|CONTEXT_FIELDS
-FIELDS=PUBLIC_FIELDS|{'request_id','lease','lease_until','artifact_sha256','artifact_bytes'}
+FIELDS=PUBLIC_FIELDS|{'request_id','lease','lease_until','artifact_sha256','artifact_bytes','datta_epoch'}
 
 
 def canonical_uuid(value):
@@ -54,6 +55,7 @@ class JobQueue:
             if key in value and not canonical_uuid(value[key]):raise ValueError('Invalid job id')
         for key in ['created_at','lease_until']:
             if key in value and not number(value[key]):raise ValueError('Invalid job timestamp')
+        if 'datta_epoch' in value and (type(value['datta_epoch']) is not int or value['datta_epoch']<1):raise ValueError('Invalid source epoch')
         if 'executor' in value and value['executor'] not in ['mac','server']:raise ValueError('Invalid executor')
         if 'action' in value and value['action'] not in ['recompute','refresh']:raise ValueError('Invalid action')
         closing_arguments(value)
@@ -104,17 +106,26 @@ class JobQueue:
             self.save(state);return self.public()
 
     def claim(self,executor):
+        from .datta_ownership import claim_gate
+        with claim_gate(self.root.parent,executor,self.clock) as allowed:
+            return self._claim(executor,allowed.get('epoch') if isinstance(allowed,dict) else None) if allowed else None
+
+    def _claim(self,executor,epoch=None):
         if executor not in ['mac','server']:raise ValueError('Invalid executor')
         with self.locked():
             state=self.expire(self.state())
-            if state['status']!='queued' or (executor=='server' and self.mac_online()):return None
+            if state['status']!='queued' or (executor=='server' and epoch is None and self.mac_online()):return None
             state.update(status='running',executor=executor,lease=secrets.token_hex(32),lease_until=self.clock()+90,
                 message='Mac 正在计算' if executor=='mac' else 'Mac 暂时离线，服务器正在计算')
+            if epoch is not None:state['datta_epoch']=epoch
             self.save(state);return state
 
     def owns(self,state,job_id,lease):
+        from .datta_ownership import epoch_valid
+        if state['status']=='running' and not epoch_valid(self.root.parent,state.get('executor'),state.get('datta_epoch'),self.clock()):return False
         return state['status'] in ['running','publishing'] and state.get('id')==job_id and isinstance(lease,str) and hmac.compare_digest(state.get('lease',''),lease) and state['lease_until']>self.clock()
 
+    @serialize_source(1)
     def heartbeat(self,job_id=None,lease=None,executor='mac'):
         with self.locked():
             if executor=='mac':atomic_json(self.root/'mac.json',{'heartbeat':self.clock()})
@@ -123,12 +134,14 @@ class JobQueue:
             if state['status']!='running' or not self.owns(state,job_id,lease) or state['executor']!=executor:return False
             state['lease_until']=self.clock()+90;self.save(state);return True
 
+    @serialize_source(1)
     def progress(self,job_id,lease,message):
         with self.locked():
             state=self.state()
             if state['status']!='running' or not self.owns(state,job_id,lease):return False
             state['message']=str(message)[:200];self.save(state);return True
 
+    @serialize_source(1)
     def uploaded(self,job_id,lease,digest,size,source=None,destination=None):
         with self.locked():
             state=self.state()
@@ -141,6 +154,7 @@ class JobQueue:
             state.update(status='publishing',lease_until=self.clock()+1800,artifact_sha256=digest,artifact_bytes=size,message='计算完成，正在校验并发布结果')
             self.save(state);return True
 
+    @serialize_source(1)
     def failed(self,job_id,lease):
         with self.locked():
             state=self.state()

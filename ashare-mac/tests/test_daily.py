@@ -121,3 +121,15 @@ class DailyStoreTests(unittest.TestCase):
         self.assertEqual(self.store.public()['latest']['evidence']['performance'],changed['performance'])
         self.assertEqual(len([e for e in self.realtime.state()['events'] if e['kind']=='daily_review']),1)
         self.assertEqual(self.calls,2)
+
+    def test_manual_retry_after_failed_refresh_creates_a_new_job(self):
+        def unavailable(*args):raise ValueError('data incomplete')
+        self.store.tick(self.root/'market/current',collect=unavailable)
+        old=self.store.queue.claim('mac')
+        self.assertTrue(self.store.queue.failed(old['id'],old['lease']))
+        self.now+=301
+        self.store.request()
+        self.store.tick(self.root/'market/current',collect=unavailable)
+        new=self.store.queue.state()
+        self.assertNotEqual(old['id'],new['id'])
+        self.assertEqual(new['status'],'queued')

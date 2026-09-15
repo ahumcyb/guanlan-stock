@@ -1,3 +1,4 @@
+from .datta_ownership import job_environment
 """Independent intraday service, so expensive history jobs cannot block alert scheduling."""
 import argparse
 import json
@@ -109,7 +110,7 @@ def run_job(claim, renew, publish, failure, market, cache, config_path=None):
                          '--market-root', str(market), '--cache', str(cache)]
             if config_path:
                 arguments += ['--config', str(config_path)]
-            process = subprocess.Popen(arguments, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(arguments, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,env=job_environment(claim))
             deadline = time.monotonic() + 240
             while process.poll() is None:
                 if lost.wait(.5):
@@ -193,6 +194,8 @@ def main(args):
         while True:
             try:
                 cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+                from engine.datta_session import require_session
+                require_session()
                 job = call('claim').get('job')
                 if job:
                     run_job(job, lambda t: call('renew', {'lease': t})['accepted'],

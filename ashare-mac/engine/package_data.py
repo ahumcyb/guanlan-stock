@@ -50,7 +50,7 @@ def _package(root,overlay,output,closing_date=None):
             covered=set(frames[kind].loc[frames[kind].trade_date==asof,'ts_code'])
             if not codes.issubset(covered): raise ValueError(f'{kind}: 最新日线代码覆盖不完整')
         basic=read_reference(root,overlay,'stock_basic')
-        frames['stock_basic']=validate_reference(basic,basic)[['ts_code','name','industry','list_date']].sort_values('ts_code').reset_index(drop=True)
+        frames['stock_basic']=validate_reference(basic,basic)[['ts_code','name','industry','list_date']+[c for c in ['float_share','shares_date'] if c in basic]].sort_values('ts_code').reset_index(drop=True)
         calendar=read_reference(root,overlay,'trade_cal')
         calendar=calendar.loc[calendar.exchange=='SSE',['exchange','cal_date','is_open']].drop_duplicates().sort_values('cal_date').reset_index(drop=True)
         validate_calendar(calendar,str(calendar.cal_date.min()),str(calendar.cal_date.max()))

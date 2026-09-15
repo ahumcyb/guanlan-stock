@@ -1,3 +1,4 @@
+from .datta_ownership import job_environment
 """Server coordinator: publish Mac results, compute only when Mac is unreachable."""
 import argparse
 import json
@@ -19,12 +20,14 @@ from .ingest import activate
 
 
 def fail(queue,job,message):
-    with queue.locked():
-        state=queue.state()
-        if queue.owns(state,job['id'],job['lease']):
-            state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS|{'executor'}}
-            state.update(status='failed',message=message);queue.save(state)
-
+    from .datta_ownership import DattaLeaseStore
+    store=DattaLeaseStore(queue.root.parent,queue.clock)
+    with store.lock():
+        with queue.locked():
+            state=queue.state()
+            if queue.owns(state,job['id'],job['lease']):
+                state={k:v for k,v in state.items() if k in PERSISTENT_FIELDS|{'executor'}}
+                state.update(status='failed',message=message);queue.save(state)
 
 def serve(root,market):
     queue=JobQueue(root/'jobs');started=time.monotonic();process=None;job=None;work=None;selector=None;buffer=b''
@@ -32,7 +35,10 @@ def serve(root,market):
     stopped=threading.Event()
     def heartbeat():
         while not stopped.is_set():
-            atomic_json(root/'jobs/capabilities.json',{'heartbeat':time.time(),'can_refresh':bool(os.environ.get('PROMAX_API_KEY'))})
+            from .datta_ownership import DattaLeaseStore
+            source=DattaLeaseStore(root).public()
+            ready=source['phase']=='active' and source['lease_until']>time.time()
+            atomic_json(root/'jobs/capabilities.json',{'heartbeat':time.time(),'can_refresh':ready})
             stopped.wait(5)
     pulse=threading.Thread(target=heartbeat,daemon=True);pulse.start()
     try:
@@ -77,7 +83,7 @@ def serve(root,market):
                 if job:
                     work=root/'work'/str(uuid.uuid4());work.mkdir(mode=0o700)
                     process=subprocess.Popen([sys.executable,'-u','-m','mobile_server.build','--data-root',str(market/'current'),
-                        '--overlay',str(root/'overlay'),'--work',str(work),'--action',job['action'],*closing_arguments(job)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+                        '--overlay',str(root/'overlay'),'--work',str(work),'--action',job['action'],*closing_arguments(job)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,env=job_environment(job))
                     os.set_blocking(process.stdout.fileno(),False);selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
                     deadline=time.monotonic()+1800;last_renew=time.monotonic();buffer=b''
                     print('Mac 离线，服务器接管任务',flush=True)

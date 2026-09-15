@@ -1,78 +1,109 @@
-"""Route prices to D6 while retaining the existing historical reference tables."""
+"""Datta-only prices and references; historical snapshots remain immutable."""
 import pandas as pd
+from datetime import timedelta
 
 from .data import FIELDS
 from .datta import DattaClient, DattaError, CODE, date_value
 from .intraday import local_now, normalize_quote
 from .market_config import market_configuration
-from .provider import ProMax
 from .d101_batch import BatchFallback, capture_batch, verify_batch
 
 
 class DattaMarketProvider:
     name='达塔 D6'
 
-    def __init__(self,reference_factory=ProMax,client=None):
+    def __init__(self,reference_factory=None,client=None):
         settings=market_configuration()
         self.client=client or DattaClient(settings['base_url'],settings['workers'])
         self.batch_enabled=settings['quote_mode']=='d101_batch'
         self.batch_base_url=settings['base_url']
-        self.reference_factory=reference_factory;self._reference=None;self._basic=None;self._daily={}
-        self.reference_warning=None
+        self._basic=None;self._daily={}
+        self._refs=pd.DataFrame(columns=['ts_code','trade_date','up_limit','down_limit','float_share'])
+        self._factors=pd.DataFrame(columns=FIELDS['adj_factor'])
+        self.reference_warning='新增行情仅使用达塔；连续价格因子根据真实前收盘价在本地计算，不是供应商官方复权因子。'
         self.quote_diagnostics={};self.index_diagnostics={}
 
-    @property
-    def reference(self):
-        if self._reference is None:self._reference=self.reference_factory()
-        return self._reference
+    def set_history(self,datasets):
+        self.history=datasets
+
+    def set_calendar(self,calendar):
+        self.open_dates=set(calendar.loc[calendar.is_open==1,'cal_date'])
 
     def prepare_days(self,dates,known_codes=()):
         if not dates:return
+        from .datta_reference import universe, reference_quote, continuous_factors, no_limit_ipo
         for date in dates:date_value(date)
-        self._basic=None;self.reference_warning=None
-        try:
-            basic=self.reference.fetch('stock_basic',list_status='L')
-            if 'ts_code' not in basic or basic.ts_code.duplicated().any():
-                raise DattaError('参考股票名录缺少有效主键')
-            self._basic=basic
-        except ValueError:
-            if not known_codes:raise
-            self.reference_warning='股票名录更新未完成，本轮价格仅覆盖已知股票；新上市或更名资料可能缺失。'
-        codes=sorted(set(known_codes)|(set(self._basic.ts_code) if self._basic is not None else set()))
-        if callable(getattr(self._reference,'set_known_codes',None)):
-            self._reference.set_known_codes(codes)
+        self._basic=universe(self.client)
+        codes=sorted(set(known_codes)|set(self._basic.ts_code))
         if any(not isinstance(code,str) or not CODE.fullmatch(code) for code in codes):
-            raise DattaError('参考股票名录包含无效代码')
-        rows=self.client.collect(codes,lambda code:self.client.history(code,'DAY',min(dates),max(dates)),budget=900)
+            raise DattaError('股票名录包含无效代码')
+        history=getattr(self,'history',None)
+        if history is None:raise DattaError('达塔增量更新需要本地历史尺度锚点')
+        first=min(dates)
+        listing=dict(zip(self._basic.ts_code,self._basic.list_date))
+        prior=history['daily'][history['daily'].trade_date<first]
+        factors=history['adj_factor'][history['adj_factor'].trade_date<first]
+        anchors=prior.merge(factors,on=['ts_code','trade_date'],validate='one_to_one').groupby('ts_code').trade_date.max().to_dict()
+        def history_start(code):
+            # Re-fetch every intervening bar for a stock whose last usable
+            # anchor precedes the market's previous session. Never silently
+            # bridge missing traded days as if they were a corporate action.
+            anchor=anchors.get(code)
+            if anchor:return (date_value(anchor)+timedelta(days=1)).strftime('%Y%m%d')
+            listed=listing.get(code)
+            if listed and 0<=(date_value(max(dates))-date_value(listed)).days<1200:return listed
+            return first
+        rows=self.client.collect(codes,lambda code:self.client.history(code,'DAY',history_start(code),max(dates)),budget=900)
         frame=pd.DataFrame(rows,columns=FIELDS['daily'])
+        print('达塔日线已采集 · '+str(len(frame))+' 行，继续核验股本与涨跌停价',flush=True)
         self._daily={date:frame[frame.trade_date==date].copy() for date in dates}
+        def fetch_reference(code):
+            try:
+                payload=self.client.transport('/d6/market/v1/stock/fundamentals',{'symbol':code[-2:].lower()+code[:6]})
+                day=date_value(payload['data']['marketDate']).strftime('%Y%m%d')
+                exempt=no_limit_ipo(code,day,listing.get(code),getattr(self,'open_dates',set()))
+                return reference_quote(payload,code,allow_no_limit=exempt)
+            except (KeyError,TypeError):raise DattaError('达塔参考行情字段缺失') from None
+        refs=self.client.collect(codes,fetch_reference,budget=900)
+        missing=sorted(set(codes)-{row['ts_code'] for row in refs})
+        if missing:refs.extend(self.client.collect(missing,fetch_reference,budget=120))
+        self._refs=pd.DataFrame(refs,columns=['ts_code','trade_date','up_limit','down_limit','float_share'])
+        if not self._refs.empty:
+            shares=self._refs[['ts_code','trade_date','float_share']].rename(columns={'trade_date':'shares_date'})
+            self._basic=self._basic.merge(shares,on='ts_code',how='left',validate='one_to_one')
+        self._factors=continuous_factors(frame,prior,factors,listing)
 
     def fetch(self,api,**params):
-        if api=='daily':
-            date=params.get('trade_date')
-            date_value(date)
-            if date not in self._daily:self.prepare_days([date])
-            return self._daily[date].copy()
-        if api=='stock_basic' and params=={'list_status':'L'} and self._basic is not None:
+        if api=='stock_basic':
+            if self._basic is None:
+                from .datta_reference import universe
+                self._basic=universe(self.client)
             return self._basic.copy()
-        return self.reference.fetch(api,**params)
+        date=params.get('trade_date')
+        if api in ['daily','adj_factor','stk_limit','daily_basic']:
+            date_value(date)
+            if api=='daily':
+                if date not in self._daily:raise DattaError('日线尚未完成达塔采集')
+                return self._daily[date].copy()
+            table=self._factors if api=='adj_factor' else self._refs
+            result=table[table.trade_date==date].copy()
+            if result.empty:raise DattaError('达塔缺少该交易日的'+api+'，不使用其他行情源')
+            columns={'adj_factor':FIELDS['adj_factor'],'stk_limit':FIELDS['stk_limit'],
+                     'daily_basic':['ts_code','trade_date','float_share']}[api]
+            return result[columns]
+        raise DattaError('达塔暂未提供此参考数据，请检查本地已验证数据：'+api)
 
     def fetch_factors(self,date,codes):
-        if callable(getattr(self.reference,'fetch_factors',None)):
-            return self.reference.fetch_factors(date,codes)
-        return self.reference.fetch('adj_factor',trade_date=date)
+        return self.fetch('adj_factor',trade_date=date)
 
     def get(self,api,**params):
         if api=='rt_min_daily':
             if params.get('freq')!='1MIN':raise DattaError('盘中策略仅使用1分钟行情')
             date=local_now().strftime('%Y%m%d')
             rows=self.client.history(params['ts_code'],'MIN1',date,date)
-            # A minute sequence may contain a still-forming next bar. Keep only
-            # bars already completed at acquisition, preserving its source time.
             cutoff=local_now().isoformat()
             return pd.DataFrame([row for row in rows if row['time']<=cutoff])
-        if api=='daily':return self.fetch(api,trade_date=params.get('trade_date'))
-        return self.reference.get(api,**params)
+        return self.fetch(api,**params)
 
     def quotes(self,codes):
         rows=self.client.quotes(codes);now=local_now();valid=[]
@@ -87,6 +118,8 @@ class DattaMarketProvider:
     def screen_quotes(self,features,include_bottom):
         codes=sorted(features);now=local_now()
         try:
+            from .datta_session import require_session
+            require_session()
             capture=capture_batch(self.batch_base_url,codes,now.strftime('%Y%m%d'))
             rows,diagnostics=verify_batch(capture,codes,features,self.client,local_now(),include_bottom,clock=local_now)
             self.quote_diagnostics=dict(diagnostics,datta_quotes=len(rows))
@@ -107,10 +140,9 @@ class DattaMarketProvider:
         return row
 
 
-def make_daily_provider(reference_factory=ProMax):
-    return DattaMarketProvider(reference_factory) if market_configuration()['provider']=='datta' else reference_factory()
+def make_daily_provider(reference_factory=None):
+    return DattaMarketProvider()
 
 
 def make_intraday_provider():
-    from .intraday_runner import IntradayProvider
-    return DattaMarketProvider(IntradayProvider) if market_configuration()['provider']=='datta' else IntradayProvider()
+    return DattaMarketProvider()

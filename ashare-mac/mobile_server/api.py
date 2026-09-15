@@ -132,6 +132,16 @@ class Service:
             try:value=json.loads(body)
             except (ValueError,UnicodeError):raise Failure(400,'INVALID_BODY','Invalid worker message')
             if not isinstance(value,dict):raise Failure(400,'INVALID_BODY','Invalid worker message')
+            if parts[:3]==['v1','worker','datta'] and len(parts)==4:
+                from .datta_ownership import DattaLeaseStore
+                store=DattaLeaseStore(self.root)
+                if set(value)-{'token'}:raise Failure(400,'INVALID_BODY','Invalid source message')
+                token=value.get('token')
+                if token is not None and (not isinstance(token,str) or not re.fullmatch('[a-f0-9]{64}',token)):
+                    raise Failure(400,'INVALID_BODY','Invalid source lease')
+                if parts[3]=='poll':return 200,store.poll('mac',token)
+                if parts[3]=='activate':return 200,{'accepted':store.activate('mac',token)}
+                if parts[3]=='release':return 200,{'accepted':store.release('mac',token)}
             if parts==['v1','worker','heartbeat'] and set(value) in [set(),{'job_id','lease'}]:
                 if value and (not canonical_uuid(value['job_id']) or not isinstance(value['lease'],str) or not re.fullmatch(r'[a-f0-9]{64}',value['lease'])):raise Failure(400,'INVALID_BODY','Invalid execution lease')
                 if not self.queue.heartbeat(**value):raise Failure(409,'LEASE_EXPIRED','Execution lease expired')
@@ -142,6 +152,7 @@ class Service:
                 if not self.queue.failed(value['job_id'],value['lease']):raise Failure(409,'LEASE_EXPIRED','Execution lease expired')
                 return 200,{'accepted':True}
         if method=='GET' and parts==['v1','status']:
+            from .datta_ownership import DattaLeaseStore
             info=self.queue.capabilities()
             online=time.time()-info.get('heartbeat',0)<30
             available={}
@@ -151,6 +162,7 @@ class Service:
             return 200,dict(schema_version=1,job=self.state(),worker_online=online,mac_online=self.queue.mac_online(),
                 can_refresh=online and info.get('can_refresh',False),reports=available,
                 market_provider=market_provider_name(),
+                datta=DattaLeaseStore(self.root).public() if (self.jobs/'datta-owner.json').exists() else {'owner':None,'phase':'waiting'},
                 market_status=market_status(self.realtime.calendar(),local_now()))
         if method=='POST' and parts==['v1','jobs']:
             try:value=json.loads(body)

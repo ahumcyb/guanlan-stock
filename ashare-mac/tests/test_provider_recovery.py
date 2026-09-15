@@ -451,7 +451,7 @@ class ProMaxRecoveryTests(unittest.TestCase):
 
         provider = Provider()
         with tempfile.TemporaryDirectory() as folder, \
-             patch('engine.update.ProMax', return_value=provider), \
+             patch('engine.update.make_daily_provider', return_value=provider), \
              patch('engine.update.read_dataset', side_effect=lambda root, overlay, kind: frames[kind]):
             update(Path(folder) / 'source', Path(folder) / 'overlay', through=DATE)
         self.assertEqual(set(provider.known or []), set(known))
@@ -504,7 +504,7 @@ class ProMaxRecoveryTests(unittest.TestCase):
 
         provider = Provider()
         with tempfile.TemporaryDirectory() as folder, \
-             patch('engine.update.ProMax', return_value=provider), \
+             patch('engine.update.make_daily_provider', return_value=provider), \
              patch('engine.update.read_dataset', side_effect=lambda root, overlay, kind: datasets[kind]):
             result = update(Path(folder) / 'source', Path(folder) / 'overlay', through=DATE)
 
@@ -516,89 +516,5 @@ class ProMaxRecoveryTests(unittest.TestCase):
         self.assertNotIn(orphan, provider.factor_calls[0][1])
 
 
-class BrokenReference:
-    def __init__(self, error=None):
-        self.error = error or row_limit()
-        self.calls = []
-
-    def fetch(self, api, **params):
-        self.calls.append((api, dict(params)))
-        if api == 'stock_basic':
-            raise self.error
-        raise AssertionError(api)
-
-
-class DailyClient:
-    diagnostics = {}
-
-    def __init__(self):
-        self.collected = []
-
-    def collect(self, requested, fetch, budget):
-        self.collected.append((list(requested), budget))
-        return [item for code in requested for item in fetch(code)]
-
-    def history(self, code, period, start, end):
-        return [dict(ts_code=code, trade_date=start, open=10.0, high=10.5, low=9.5,
-                     close=10.2, pre_close=10.0, vol=100.0, amount=1000.0)]
-
-
-class DattaReferenceRecoveryTests(unittest.TestCase):
-    def provider(self, reference):
-        client = DailyClient()
-        config = dict(base_url='http://127.0.0.1:8080', workers=4, quote_mode='d6')
-        with patch('engine.market_source.market_configuration', return_value=config):
-            provider = DattaMarketProvider(lambda: reference, client)
-        return provider, client
-
-    def test_known_source_codes_allow_price_recovery_but_never_fabricate_reference_metadata(self):
-        for failure in [row_limit(), ValueError('conflicting stock metadata')]:
-            with self.subTest(failure=type(failure).__name__):
-                reference = BrokenReference(failure)
-                provider, client = self.provider(reference)
-                known = ['000001.SZ', '000002.SZ', '600001.SH']
-
-                provider.prepare_days([DATE], known_codes=known)
-
-                self.assertEqual(client.collected[0][0], sorted(known))
-                self.assertEqual(set(provider.fetch('daily', trade_date=DATE).ts_code), set(known))
-                self.assertTrue(provider.reference_warning)
-                with self.assertRaises(ValueError):
-                    provider.fetch('stock_basic', list_status='L')
-
-    def test_without_known_codes_reference_failure_stops_before_any_price_request(self):
-        provider, client = self.provider(BrokenReference())
-        with self.assertRaises(ValueError):
-            provider.prepare_days([DATE], known_codes=[])
-        self.assertEqual(client.collected, [])
-
-    def test_factor_code_method_delegates_when_supported_and_keeps_legacy_reference_compatible(self):
-        class CurrentReference:
-            def __init__(self):
-                self.calls = []
-
-            def fetch_factors(self, date, requested):
-                self.calls.append(('fetch_factors', date, list(requested)))
-                return factors(requested, date)
-
-        current = CurrentReference()
-        provider, _ = self.provider(current)
-        self.assertEqual(set(provider.fetch_factors(DATE, ['000001.SZ']).ts_code), {'000001.SZ'})
-        self.assertEqual(current.calls, [('fetch_factors', DATE, ['000001.SZ'])])
-
-        class LegacyReference:
-            def __init__(self):
-                self.calls = []
-
-            def fetch(self, api, **params):
-                self.calls.append((api, dict(params)))
-                return factors(['000001.SZ'], params['trade_date'])
-
-        legacy = LegacyReference()
-        provider, _ = self.provider(legacy)
-        self.assertEqual(set(provider.fetch_factors(DATE, ['000001.SZ']).ts_code), {'000001.SZ'})
-        self.assertEqual(legacy.calls, [('adj_factor', {'trade_date': DATE})])
-
-
-if __name__ == '__main__':
-    unittest.main()
+# Mixed Datta/ProMax reference recovery was retired with the Datta-only migration.
+# Replacement coverage is in test_datta_reference and test_market_source.

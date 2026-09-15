@@ -9,7 +9,7 @@ from engine.update import update, validate_reference, load_calendar
 
 class UpdateTests(unittest.TestCase):
     def setUp(self):
-        self.market=patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'})
+        self.market=patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'datta'})
         self.market.start();self.addCleanup(self.market.stop)
 
     def test_complete_local_calendar_does_not_depend_on_network(self):
@@ -44,7 +44,7 @@ class UpdateTests(unittest.TestCase):
                     calendar=pd.DataFrame(dict(exchange='SSE',cal_date=days,is_open=[int(d=='20260904') for d in days]))
                     return calendar[calendar.is_open==params['is_open']].reset_index(drop=True)
                 raise ValueError('ProMax 返回错误状态')
-        with tempfile.TemporaryDirectory() as tmp, patch('engine.update.ProMax',return_value=Fake()), patch('engine.update.read_dataset',side_effect=lambda r,o,k:frames[k]):
+        with tempfile.TemporaryDirectory() as tmp, patch('engine.update.make_daily_provider',return_value=Fake()), patch('engine.update.read_dataset',side_effect=lambda r,o,k:frames[k]):
             result=update(Path(tmp)/'source',Path(tmp)/'overlay',through='20260904')
             self.assertEqual(result['validation'],'partial')
             self.assertEqual(result['failures'][0]['date'],'stock_basic')
@@ -63,7 +63,7 @@ class UpdateTests(unittest.TestCase):
                     return table[table.is_open==params['is_open']].reset_index(drop=True)
                 if api=='stock_basic':return local['daily'][['ts_code']].assign(name='测试',industry='行业',list_date='20000101')
                 calls.append(api);return remote[api].copy()
-        with tempfile.TemporaryDirectory() as tmp,patch('engine.update.ProMax',return_value=Fake()),patch('engine.update.read_dataset',side_effect=lambda r,o,k:local[k]),patch('engine.update.datetime') as clock:
+        with tempfile.TemporaryDirectory() as tmp,patch('engine.update.make_daily_provider',return_value=Fake()),patch('engine.update.read_dataset',side_effect=lambda r,o,k:local[k]),patch('engine.update.datetime') as clock:
             clock.now.return_value=NOW
             result=update(Path(tmp)/'source',Path(tmp)/'overlay',through=DATE,force_latest=True)
             self.assertEqual(set(calls),{'daily','adj_factor','stk_limit'})
@@ -81,7 +81,7 @@ class UpdateTests(unittest.TestCase):
                     table=pd.DataFrame(dict(exchange='SSE',cal_date=days,is_open=[int(d==DATE) for d in days]))
                     return table[table.is_open==params['is_open']].reset_index(drop=True)
                 raise ValueError('数据未齐')
-        with tempfile.TemporaryDirectory() as tmp,patch('engine.update.ProMax',return_value=Fake()),patch('engine.update.read_dataset',side_effect=lambda r,o,k:local[k]),patch('engine.update.datetime') as clock:
+        with tempfile.TemporaryDirectory() as tmp,patch('engine.update.make_daily_provider',return_value=Fake()),patch('engine.update.read_dataset',side_effect=lambda r,o,k:local[k]),patch('engine.update.datetime') as clock:
             clock.now.return_value=NOW
             result=update(Path(tmp)/'source',Path(tmp)/'overlay',through=DATE,force_latest=True)
             self.assertIsNone(result['close_attestation'])

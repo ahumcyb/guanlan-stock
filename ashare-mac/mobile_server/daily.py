@@ -126,11 +126,13 @@ class DailyStore:
             row=state['days'].setdefault(date,self.new_day())
             if row.get('phase')=='ready' and refresh_facts:
                 row.update(phase='waiting',manual=True,retry_at=0,attempts=0,
+                           request_nonce=str(uuid.uuid4()),job_id=None,
                            message='等待重新核验行情与上一交易日精选结算')
             elif row.get('phase')=='ready' and retry_ai:
                 row.update(phase='data_ready',manual=True,retry_ai=True,retry_at=0,message='等待重新生成 AI 解读')
             elif row.get('phase') not in ['ready','ai_pending']:
-                row.update(manual=True,retry_at=0,attempts=0)
+                row.update(phase='waiting',manual=True,retry_at=0,attempts=0,
+                           request_nonce=str(uuid.uuid4()),job_id=None)
             self.save(state)
         return {'accepted':True,'date':date}
 
@@ -214,7 +216,7 @@ class DailyStore:
                         state=self.state();state['days'][date].update(phase='failed',message='当日行情仍未完整，未生成当日结论；可手动重试');self.save(state)
                     self.notify(date,failure=True);return
                 try:
-                    request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,f'guanlan:daily:{date}:{row["attempts"]+1}'))
+                    request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,f'guanlan:daily:{date}:{row.get("request_nonce", "scheduled")}:{row["attempts"]+1}'))
                     job=self.queue.submit('refresh',request_id,expected_as_of=date)
                 except BlockingIOError:return
                 if job.get('expected_as_of')!=date:return

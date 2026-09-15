@@ -1,5 +1,6 @@
 """Small persisted realtime queue, with one fenced executor and a server outbox."""
 import fcntl
+from .datta_ownership import serialize_source
 import hmac
 import json
 import math
@@ -264,13 +265,18 @@ class RealtimeStore:
         return {'accepted': True}
 
     def claim(self, executor):
+        from .datta_ownership import claim_gate
+        with claim_gate(self.root.parent.parent,executor,self.clock) as allowed:
+            return self._claim(executor,allowed.get('epoch') if isinstance(allowed,dict) else None) if allowed else None
+
+    def _claim(self, executor,epoch=None):
         with self.lock():
             state = self.state();now = self.clock();settings = self.settings()
             nodes = self.read('nodes.json', {});nodes[executor + '_heartbeat'] = now
             atomic_json(self.root / 'nodes.json', nodes)
             if state.get('lease', {}).get('expires_at', 0) > now:
                 return None
-            if executor == 'server' and 0 <= now - nodes.get('mac_heartbeat', 0) < 45:
+            if executor == 'server' and epoch is None and 0 <= now - nodes.get('mac_heartbeat', 0) < 45:
                 return None
             calendar = self.calendar();job = due_slot(local_now(now), calendar) if settings['enabled'] else None
             if job is None and state.get('manual') and now - state['manual']['scheduled_at'] < 180:
@@ -282,13 +288,17 @@ class RealtimeStore:
                 return None
             job = dict(job, previous_date=days[-1])
             lease = dict(job=job, executor=executor, token=secrets.token_hex(32), expires_at=now + 90)
+            if epoch is not None:lease['datta_epoch']=epoch;job['datta_epoch']=epoch
             state['lease'] = lease;self.save(state)
             return dict(job, lease=lease['token'], previous_candidates=self.previous_candidates(job['date']))
 
     def owns(self, state, token):
         lease = state.get('lease', {})
+        from .datta_ownership import epoch_valid
+        if not epoch_valid(self.root.parent.parent,lease.get('executor'),lease.get('datta_epoch'),self.clock()):return False
         return isinstance(token, str) and hmac.compare_digest(lease.get('token', ''), token) and lease.get('expires_at', 0) > self.clock()
 
+    @serialize_source(2)
     def renew(self, token):
         with self.lock():
             state = self.state()
@@ -299,6 +309,7 @@ class RealtimeStore:
             atomic_json(self.root / 'nodes.json', nodes);self.save(state)
             return True
 
+    @serialize_source(2)
     def publish(self, token, report):
         with self.lock():
             state = self.state();now = self.clock()
@@ -328,6 +339,7 @@ class RealtimeStore:
             self.save(state)
             return True
 
+    @serialize_source(2)
     def fail(self, token):
         with self.lock():
             state = self.state()

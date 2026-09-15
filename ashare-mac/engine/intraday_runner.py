@@ -205,6 +205,13 @@ def features_for(root, cache, provider, now=None):
     missing = incomplete_days(counts, days, previous)
     if len(missing) > 15:
         raise ValueError('历史数据落后超过15个交易日，请先更新数据')
+    if missing and callable(getattr(provider,'prepare_days',None)):
+        from .data import read_dataset
+        # Use the complete local anchor history, including long suspensions;
+        # the 180-day feature slice alone cannot anchor a returning stock.
+        provider.set_history({kind:read_dataset(root,cache,kind) for kind in ['daily','adj_factor']})
+        provider.open_dates=set(days)
+        provider.prepare_days(missing,known_codes=tables['daily'].ts_code.unique().tolist())
     for day in missing:
         new = {}
         for kind in ['daily', 'adj_factor']:
@@ -230,7 +237,11 @@ def features_for(root, cache, provider, now=None):
     warning = []
     share_map = {}
     try:
-        shares = provider.get('daily_basic', trade_date=previous, fields='ts_code,trade_date,float_share', limit=6500)
+        if {'float_share','shares_date'}.issubset(basic.columns):
+            shares=basic.reset_index().rename(columns={'shares_date':'trade_date'})
+            shares=shares[shares.trade_date==previous][['ts_code','trade_date','float_share']]
+        else:
+            shares = provider.get('daily_basic', trade_date=previous, fields='ts_code,trade_date,float_share', limit=6500)
         share_map = checked_shares(shares, previous, expected_codes)
     except Exception:
         warning.append('前日流通股本不可用，七步法暂不生成候选')

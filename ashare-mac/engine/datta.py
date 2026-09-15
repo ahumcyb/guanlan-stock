@@ -164,6 +164,8 @@ class DattaClient:
         self.diagnostics={}
 
     def _request(self,path,params):
+        from .datta_session import require_session
+        require_session()
         request=Request(self.base_url+path+('?' + urlencode(params) if params else ''),headers={'Accept':'application/json'})
         try:
             with self.opener.open(request,timeout=4) as response:

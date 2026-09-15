@@ -1,5 +1,8 @@
 # 观澜选股
 
+
+2026-09-15 起新增行情只使用达塔 v85。Mac 默认持有登录权并计算；Mac 失联后 Linux 才登录接管，Mac 恢复时等待 Linux 当前任务结束后交接。ProMax 与新浪的在线备用路径已停用。详细契约与部署方式见 [全达塔与双机登录协调](docs/DATTA_ONLY_V85.md)。
+
 本机运行的 macOS 原生 A 股短线研究软件。SwiftUI 界面，Python 独立引擎；原始行情只读，策略没有导入 quanta 的旧算法或权重。
 
 2026-09-14 已恢复当日收盘行情及总结：修正 ProMax 分页、因子分批与限流重试，达塔会话已恢复。名录暂沿用上一份有效缓存，日报明确提示并暂停行业排序。详见[排查与验收](docs/MARKET_RECOVERY_20260914.md)。
@@ -17,13 +20,13 @@ Mac 1.10.0（13）新增[共享交互 K 线](docs/KLINE_UPGRADE.md)：日/周/�
 - **选股工作台**：切换“流动性趋势”、“缩量回踩转强”、“黄金坑”或第四项“左侧低吸”，查看精选、符合条件、等待和全部股票。搜索支持代码、名称和行业。
 - **股票详情**：可缩放日/周/月 K 线、均线、量能及 MACD/RSI，支持原始价核对与大图；同时显示条件匹配、回踩/突破/失效参考。星标加入个人观察列表。
 - **历史检验**：1、3、5 个交易日的次日开盘事件收益，费用压力、流动性参照、分月统计和缺失审计。
-- **数据管理**：切换“服务器 / 本地”数据源。服务器模式从 `106.14.125.189` 同步已发布的行情；本地模式通过 ProMax 补齐最近 120 个市场交易日的日线、复权因子和涨跌停价，并更新交易日历及股票列表。
+- **数据管理**：切换“服务器 / 本地”数据源。服务器模式从 `106.14.125.189` 同步已发布的行情；本地模式通过达塔补充日线、连续价格尺度和涨跌停参考，并更新股票名录、行业及收盘股本；交易日历优先复用已验证的本地版本。
 - **收盘总结**：交易日 16:10 起自动更新和核验当日行情，生成市场、行业及四套策略复盘，支持 DeepSeek 量价解读与 Bark 完成提醒；「总结设置」可更换 API Key。流程与维护见 [每日总结说明](docs/DAILY_SUMMARY.md)。
 - **导出 CSV**：导出当前筛选或观察列表。代码与名称可直接查阅。
 
 “重新选股”使用当前数据源的本机缓存；服务器模式点击“同步服务器”，本地模式点击“更新数据”，完成后都会重新选股。进度显示在窗口底部，更新/计算过程中可取消，原先的有效报告保留。
 
-本机已配置服务器模式，五张行情表部署到 `/srv/guanlan-data/current`，仅使用独立只读 SSH 密钥访问。计算仍在 Mac 上进行。服务器保存已发布快照；需要补齐行情并发布新版本时，在本机运行 `bash scripts/publish_server_data.sh --refresh`，按 SSH 提示完成管理员认证。密码与 ProMax 密钥不进入工程。部署、校验、回滚说明见 [docs/SERVER.md](docs/SERVER.md)。
+本机已配置服务器模式，五张行情表部署到 `/srv/guanlan-data/current`，仅使用独立只读 SSH 密钥访问。计算仍在 Mac 上进行。服务器保存已发布快照；需要补齐行情并发布新版本时，在本机运行 `bash scripts/publish_server_data.sh --refresh`，按 SSH 提示完成管理员认证。密码与达塔登录凭据不进入 Git。部署、校验、回滚说明见 [docs/SERVER.md](docs/SERVER.md)。
 
 ## 策略与结论边界
 
@@ -47,7 +50,7 @@ Mac 1.10.0（13）新增[共享交互 K 线](docs/KLINE_UPGRADE.md)：日/周/�
 
 这是一项**事件研究**：多日信号可能重叠，未计入资金占用、整数手数、最小佣金、盘口冲击和盘中止损，不能当作实盘组合年化。当前名称与行业用于历史过滤，缺少逐日股票名单 / ST 状态，因此存在幸存者和行业状态偏差。分月统计不等于独立样本外验证。没有接入自动下单。
 
-## 数据与 ProMax
+## 数据与达塔
 
 默认只读 `/Users/bennie/quanta/data`：
 
@@ -62,9 +65,11 @@ refreshes/YYYYMMDD/daily_*.parquet   # 排除 daily_basic
 
 新工程新增数据位于 `ashare-mac/data/updates/YYYYMMDD/`，参考表位于 `data/reference/`。更新只请求需要的公开行情日期，不发送本地数据。按完整日期发布；出现空数据、冲突、分页重叠或覆盖不足时，该日期不发布，其他有效日期继续保存，缺口写入 `data/last_update.json`。三条独立请求并行，单次请求限时及有限重试。
 
-ProMax 地址沿用现有数据接口文档：`https://pcd.mobcvb.cn/tushare/pro/{api_name}`，HTTPS GET，`X-API-Key` 请求头。凭据优先来自 `PROMAX_API_KEY` 环境变量，其次是 macOS Keychain 的 `quanta.promax.api-key`（当前系统账户）。密钥不进入命令行、URL、日志或 Git。
+行情仅访问本机 DataInterface：D6 日线/实时报价，D4 全市场股票名录，D101 批量初筛并由 D6 复核。`GUANLAN_MARKET_PROVIDER=promax` 会报错，不能启用旧源。更新程序不会读取 ProMax 密钥。
 
-此次部署实测发现带 `fields` 及小分页的部分历史请求有重叠或缺数。更新器优先用单页 20,000 行请求覆盖完整日期，请求默认字段后在本地保留规范列。股票列表接口使用不带分页参数的完整列表请求，上市日期统一规范为 YYYYMMDD 字符串；交易日历优先复用本地完整年份，缺少时显式请求开市和休市两个集合并检查自然日连续性。页内完全相同的重复行可归一；冲突值和跨页重叠拒绝发布。日线和股票列表数量同时对照历史覆盖，不能仅以“返回了数据”宣告完整。`daily.pre_close` 是除权参考前收；成交额单位为千元，成交量单位为手。
+更新前必须由 `mobile_server.datta_supervisor` 取得服务器的统一登录租约。Mac 使用 `settings/datta-supervisor.json` 和 `settings/datta-session.json`；Linux 使用私有 `/srv/guanlan-datta/supervisor.json`，执行节点通过 `GUANLAN_DATTA_SESSION` 指向共享权限收据。不要另设客户端登录或重连定时任务。
+
+连续价格因子由原尺度锚点和达塔真实 `pre_close` 逐日计算，明确标为本地连续价格尺度。新股缺锚时从真实上市日开始采集；缺失或冲突的数据不造值。涨跌停 0/0 仅在已验证的新股无涨跌幅限制期接受。收盘保存 `float_share/shares_date`，次日实时策略用前日股本；缺失时明确暂停依赖股本的策略。成交额为千元，成交量为手。
 
 原始日线中的少数股票可追溯更早年份；全市场研究的起点根据 >=4000 只股票的有效日线日期识别。实际覆盖、停留日期、当日缺因子 / 限制价的股票数均以软件报告为准。
 
@@ -103,7 +108,7 @@ open build/观澜选股.app
 - [Tushare 每日涨跌停价格](https://tushare.pro/document/2?doc_id=183)
 - [上交所交易规则（2026 年修订）](https://www.sse.com.cn/lawandrules/sselawsrules2025/stocks/exchange/c/c_20260424_10816482.shtml)
 - [Apple SwiftUI](https://developer.apple.com/documentation/technologyoverviews/swiftui)
-- 本地 ProMax 协议依据：上级工程 `docs/promax_provider.md`，仅复用数据协议和钥匙串服务名。
+- 旧 ProMax 文件仅保留历史协议与回归证据，其客户端构造入口已禁用。
 
 ## 黄金坑盘后策略
 

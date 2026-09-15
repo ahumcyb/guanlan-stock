@@ -23,8 +23,7 @@ class MarketSourceTests(unittest.TestCase):
                 path.write_text(json.dumps(dict(provider='datta',quote_mode='d101_batch')))
                 self.assertEqual(market_provider_name(),'达塔批量初筛＋D6复核')
                 path.write_text(json.dumps(dict(provider='promax',primary_provider='datta',primary_quote_mode='d101_batch')))
-                self.assertEqual(market_provider_name(),'Mac：达塔批量初筛＋D6复核；服务器备用：ProMax')
-                self.assertEqual(market_configuration()['provider'],'promax')
+                with self.assertRaises(DattaError):market_provider_name()
                 path.write_text(json.dumps(dict(provider='datta',quote_mode='unverified')))
                 with self.assertRaises(DattaError):market_configuration()
 
@@ -33,9 +32,10 @@ class MarketSourceTests(unittest.TestCase):
         from unittest.mock import Mock
         client=Mock();client.quotes.return_value=[decode_quote(quote_payload(),'600000.SH')]
         client.diagnostics=dict(provider='datta_d6')
-        with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'}),\
+        with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'datta'}),\
              patch('engine.market_source.local_now',return_value=NOW),\
-             patch('engine.market_source.capture_batch',side_effect=BatchFallback('wrong_trade_date')):
+             patch('engine.market_source.capture_batch',side_effect=BatchFallback('wrong_trade_date')),\
+             patch('engine.datta_session.require_session'):
             provider=DattaMarketProvider(client=client)
             result=provider.screen_quotes({'600000.SH':{},'600001.SH':{}},True)
         client.quotes.assert_called_once_with(['600000.SH','600001.SH'])
@@ -49,38 +49,25 @@ class MarketSourceTests(unittest.TestCase):
             with patch.dict(os.environ,{'GUANLAN_MARKET_CONFIG':str(path),'GUANLAN_MARKET_PROVIDER':''}):
                 with self.assertRaises(DattaError):market_configuration()
                 path.write_text(json.dumps(dict(provider='promax')))
-                self.assertEqual(market_configuration()['provider'],'promax')
+                with self.assertRaises(DattaError):market_configuration()
                 path.write_text(json.dumps(dict(provider='datta',workers=24)))
                 self.assertEqual(market_configuration()['provider'],'datta')
                 path.write_text(json.dumps(dict(provider='datta',base_url='http://remote.example:8080')))
                 with self.assertRaises(DattaError):market_configuration()
 
-    def test_reference_fallback_never_fetches_stock_prices(self):
-        calls=[]
-        class Reference:
-            def fetch(self,api,**params):
-                calls.append(api)
-                if api=='stock_basic':return pd.DataFrame(dict(ts_code=['600000.SH','920000.BJ']))
-                if api=='daily':raise AssertionError('Prices came from the old source')
-                return pd.DataFrame(dict(adj_factor=[1.]))
-        class Client:
-            def collect(self,codes,fetch,budget):return [row for code in codes for row in fetch(code)]
-            def history(self,code,period,start,end):
-                return [dict(ts_code=code,trade_date=start,open=9.21,high=9.34,low=9.21,close=9.28,
-                             pre_close=9.23,vol=403779.31,amount=374763.157)]
-        with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'}):
-            provider=DattaMarketProvider(Reference,Client())
-            provider.prepare_days(['20260908'])
-            result=provider.fetch('daily',trade_date='20260908')
-            self.assertEqual(set(result.ts_code),{'600000.SH','920000.BJ'})
-            self.assertEqual(len(provider.fetch('stock_basic',list_status='L')),2)
-            provider.fetch('adj_factor',trade_date='20260908')
-        self.assertEqual(calls,['stock_basic','adj_factor'])
+    def test_no_reference_api_can_fall_back_to_retired_provider(self):
+        def forbidden():raise AssertionError('Retired provider was constructed')
+        with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'datta'}):
+            provider=DattaMarketProvider(forbidden)
+            for api in ['adj_factor','stk_limit','daily_basic','trade_cal']:
+                with self.assertRaises(DattaError):provider.get(api,trade_date='20260915')
+            self.assertIsInstance(make_daily_provider(forbidden),DattaMarketProvider)
 
-    def test_legacy_factory_remains_explicitly_selectable(self):
-        reference=object()
+    def test_legacy_configuration_and_constructor_are_disabled(self):
+        from engine.provider import ProMax
+        with self.assertRaises(ValueError):ProMax()
         with patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'}):
-            self.assertIs(make_daily_provider(lambda:reference),reference)
+            with self.assertRaises(DattaError):make_daily_provider()
 
     def test_datta_quote_path_reaches_1430_screen_without_old_price_calls(self):
         from engine.intraday_runner import run
@@ -93,11 +80,11 @@ class MarketSourceTests(unittest.TestCase):
         features=dict(previous='20260907',source_version='test',open_dates=['20260907','20260908'],warnings=[],
             features={'600000.SH':dict(name='浦发银行',date='20260907',observations=60,adjusted=True,
                                       last_close=9.23,low60=8.5,mean_volume5=10000000.)})
-        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'promax'}),\
+        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'GUANLAN_MARKET_PROVIDER':'datta'}),\
              patch('engine.market_source.local_now',return_value=NOW),\
              patch('engine.intraday_runner.local_now',return_value=NOW),\
              patch('engine.intraday_runner.features_for',return_value=features):
-            provider=DattaMarketProvider(no_reference,Client())
+            provider=DattaMarketProvider(no_reference,Client());provider.batch_enabled=False
             report=run(Path(directory),Path(directory)/'cache',provider=provider,slot_id='20260908-1430')
         self.assertEqual(report['status'],'ready')
         self.assertEqual(report['fresh_count'],1)

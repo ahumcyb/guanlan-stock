@@ -10,7 +10,6 @@ import fcntl
 import pandas as pd
 
 from .data import FIELDS, atomic_json, publish_day, read_dataset, read_reference, full_market_dates, minimum_market_rows
-from .provider import ProMax
 from .market_source import make_daily_provider
 
 
@@ -80,14 +79,15 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError('已有数据更新正在运行') from None
-        client = make_daily_provider(reference_factory=ProMax)
-        provider_name=getattr(client,'name','ProMax')
+        client = make_daily_provider()
+        provider_name=getattr(client,'name','达塔')
         now = datetime.now(ZoneInfo('Asia/Shanghai'))
         cutoff = through or (now if now.hour >= 18 else now-timedelta(days=1)).strftime('%Y%m%d')
         pd.to_datetime(cutoff, format='%Y%m%d', errors='raise')
         status('连接 '+provider_name+'，核对交易日历…')
         cal_start,cal_end=f'{int(cutoff[:4])-1}0101',f'{cutoff[:4]}1231'
         calendar=load_calendar(root,overlay,cal_start,cal_end,client)
+        if callable(getattr(client,'set_calendar',None)):client.set_calendar(calendar)
         save_reference(overlay/'reference'/'trade_cal.parquet', calendar)
         dates = sorted(calendar.loc[(calendar.is_open == 1) & (calendar.cal_date <= cutoff), 'cal_date'].astype(str))[-120:]
         if not dates:
@@ -101,6 +101,7 @@ def update(root: Path, overlay: Path, through=None, force_latest=False) -> dict:
                 raise ValueError('收盘总结须在交易日 16:10 后重新核验行情')
         status('读取本地覆盖范围…')
         datasets = {k: read_dataset(root, overlay, k) for k in FIELDS}
+        if callable(getattr(client,'set_history',None)):client.set_history(datasets)
         if callable(getattr(client,'set_known_codes',None)):
             client.set_known_codes(datasets['daily'].ts_code.unique().tolist())
         by_day = {k: {d: g for d, g in f.groupby('trade_date')} for k, f in datasets.items()}

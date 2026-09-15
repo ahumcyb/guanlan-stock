@@ -52,16 +52,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 class ProMax:
     def __init__(self):
-        secret = os.environ.get('PROMAX_API_KEY', '').strip()
-        if not secret:
-            p = subprocess.run(['/usr/bin/security', 'find-generic-password', '-s',
-                                'quanta.promax.api-key', '-a', getpass.getuser(), '-w'],
-                               capture_output=True, text=True, timeout=10)
-            if p.returncode == 0:
-                secret = p.stdout.strip()
-        if not secret or not secret.isascii() or not all(32 < ord(c) < 127 for c in secret):
-            raise ValueError('找不到 ProMax 凭据，请在钥匙串配置 quanta.promax.api-key')
-        self._secret = secret
+        raise ValueError('ProMax 已停用；请使用达塔行情接口')
 
     @staticmethod
     def _throttle():
