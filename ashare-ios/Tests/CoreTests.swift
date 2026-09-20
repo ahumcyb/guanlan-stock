@@ -72,7 +72,7 @@ import Foundation
                 try cache.saveBundle(reports,manifests:next)
             }
             let retained=try FileManager.default.contentsOfDirectory(at:temporary,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.hasSuffix("-report.json")}
-            assert(retained.count<=9)
+            assert(retained.count<=manifests.count*2+1)
             print("Atomic four-strategy cache and invalid-bundle preservation passed")
         }
         do { _=try cache.chartURL(manifest,code:"../../secret");assertionFailure("Traversal was accepted") } catch {}
@@ -90,7 +90,7 @@ import Foundation
             let invalid=Pairing(endpoint:"https://example.invalid",token:pairing.token,certificate:pairing.certificate)
             do { _=try invalid.validated();assertionFailure("Unexpected host accepted") } catch {}
             let api=try MobileAPI(pairing)
-            let status=try await api.request("/v1/status",limit:65536)
+            let status=try await api.request("/v2/status",limit:65536)
             let state=try mobileDecoder().decode(ServerStatus.self,from:status);assert(state.schemaVersion==1)
             let value=try await api.request("/v1/reports/leaders/current",limit:65536)
             let remote=try mobileDecoder().decode(MobileManifest.self,from:value)

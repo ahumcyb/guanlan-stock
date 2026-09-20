@@ -86,7 +86,7 @@ final class MobileAPI:@unchecked Sendable {
     }
     deinit { session.invalidateAndCancel() }
     func request(_ path:String,method:String="GET",body:Data?=nil,limit:Int=12*1024*1024) async throws -> Data {
-        guard path.hasPrefix("/v1/"),!path.contains(".."),!path.contains("?"),!path.contains("%"),
+        guard (path.hasPrefix("/v1/") || path=="/v2/status" || path=="/v2/daily" || path.hasPrefix("/v2/daily/")),!path.contains(".."),!path.contains("?"),!path.contains("%"),
               let url=URL(string:pairing.endpoint.trimmingCharacters(in:CharacterSet(charactersIn:"/"))+path) else { throw MobileFailure.invalidConfiguration }
         var request=URLRequest(url:url);request.httpMethod=method;request.httpBody=body
         request.setValue("Bearer "+pairing.token,forHTTPHeaderField:"Authorization")
