@@ -193,7 +193,7 @@ def features_for(root, cache, provider, now=None):
     target = cache / ('features-' + date + '.json')
     if target.exists():
         value = json.loads(target.read_text())
-        if value.get('schema_version') == 3 and value.get('source_version') == version and value.get('previous') == previous and not value.get('warnings'):
+        if value.get('schema_version') == 4 and value.get('source_version') == version and value.get('previous') == previous and not value.get('warnings'):
             return value
     start = (now - timedelta(days=180)).strftime('%Y%m%d')
     tables = {}
@@ -268,10 +268,11 @@ def features_for(root, cache, provider, now=None):
             sum4=float(prices.tail(4).sum()), sum9=float(prices.tail(9).sum()), sum19=float(prices.tail(19).sum()),
             ma5=float(prices.tail(5).mean()), platform_high=float(highs.tail(10).max()),
             platform_range=float(prices.tail(10).max() / prices.tail(10).min()), mean_volume5=mean_volume,
+            amount20=float(group.amount.tail(20).mean())*1000,
             low60=float(lows.min()),float_shares=floating if math.isfinite(floating) and floating > 0 else 0)
     if len(features) < 3500:
         raise ValueError('历史特征可用股票不足3500只')
-    value = dict(schema_version=3, date=date, previous=previous, source_version=version, open_dates=days, features=features, warnings=warning)
+    value = dict(schema_version=4, date=date, previous=previous, source_version=version, open_dates=days, features=features, warnings=warning)
     atomic_json(target, value)
     # Features are tiny, still keep bounded retention.
     for old in sorted(cache.glob('features-*.json'))[:-10]:
@@ -363,6 +364,7 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
             report['bottom_volume']=dict(rule_version=BOTTOM_RULE_VERSION,status='blocked',lookback=60,matched_count=0,candidates=[],checked_at=local_now().timestamp(),
                 oldest_quote_at=min(q['quote_at'] for q in quotes),message='近60日低价历史基准未齐，底部放量未执行。')
         else:report['bottom_volume']=bottom_volume_screen(value['features'],quotes,local_now(),value['previous'])
+    if slot_id==report['date']+'-1430':report['_orderflow_context']=(value,quotes)
     progress('index')
     try:
         index_raw=provider.index_quote()
@@ -411,6 +413,22 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
 
 def run(root,cache,kind='screen',previous_candidates=None,provider=None,progress=None,slot_id=None):
     report=_run(root,cache,kind,previous_candidates,provider,progress,slot_id)
+    context=report.pop('_orderflow_context',None)
+    if context:
+        from .orderflow_intraday import run_flow
+        value,quotes=context;now=local_now()
+        # Leave transport/publication headroom for the already completed original strategies.
+        remaining=min(45,180-(now.timestamp()-min(q['quote_at'] for q in quotes))-30)
+        if remaining>=10:
+            if progress:progress('orderflow')
+            report['orderflow']=run_flow(value['features'],quotes,value['open_dates'],value['previous'],clock=local_now,budget=remaining)
+        else:
+            report['orderflow']=dict(rule_version=1,status='blocked',requested=0,verified=0,matched_count=0,candidates=[],
+                checked_at=now.timestamp(),oldest_quote_at=now.timestamp(),message='本轮剩余新鲜度预算不足，大单承接未执行，原策略结果保留。')
+        report['generated_at']=local_now().timestamp()
+    flow=report.get('orderflow')
+    if flow and local_now().timestamp()-flow['oldest_quote_at']>180:
+        flow.update(status='blocked',matched_count=0,candidates=[],message='行情在后续采集期间过时，大单结果未发布。')
     bottom=report.get('bottom_volume')
     if bottom is not None:
         finished=local_now();report['generated_at']=finished.timestamp()

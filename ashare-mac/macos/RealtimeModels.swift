@@ -21,6 +21,7 @@ struct RealtimeState: Codable {
     let latest: RealtimeSnapshot?
     let lastScreen: RealtimeSnapshot?
     let lastBottom:RealtimeSnapshot?
+    let lastFlow:RealtimeSnapshot?
 }
 
 struct RealtimeSnapshot: Codable {
@@ -46,6 +47,7 @@ struct RealtimeSnapshot: Codable {
     let failureStage:String?
     let changes:[String:RealtimeSelectionChange]?
     let bottomVolume:BottomVolumeResult?
+    let orderflow:RealtimeFlowResult?
     var complete:Bool { ["ready","empty"].contains(status) && runState != "waiting" }
     var quoteCoverageLabel:String {
         if let batchQuoteCount {
@@ -66,6 +68,12 @@ struct RealtimeSnapshot: Codable {
         }
         return ["ready":"筛选完成","empty":"筛选完成 · 0只候选","closed":"休市"][status] ?? "状态待核验"
     }
+}
+
+struct RealtimeFlowResult:Codable {
+    let status:String;let ruleVersion:Int;let requested:Int;let verified:Int;let matchedCount:Int
+    let candidates:[RealtimeCandidate];let checkedAt:Double;let oldestQuoteAt:Double;let message:String
+    var complete:Bool { ["ready","empty"].contains(status) }
 }
 
 struct BottomVolumeResult:Codable {
@@ -123,6 +131,18 @@ extension RealtimeSnapshot {
             guard rows.count<=10,Set(rows.map(\.tsCode)).count==rows.count,complete || rows.isEmpty,
                   rows.allSatisfy({$0.strategy==strategy && $0.price.isFinite && $0.price>0 && $0.quoteAt.isFinite && $0.quoteAt<=generatedAt+15}) else { throw CocoaError(.fileReadCorruptFile) }
         }
+        if let flow=orderflow {
+            guard slot==date+"-1430",flow.ruleVersion==1,["ready","empty","blocked"].contains(flow.status),
+                  (0...100).contains(flow.requested),(0...flow.requested).contains(flow.verified),
+                  (0...flow.verified).contains(flow.matchedCount),flow.candidates.count<=10,
+                  flow.matchedCount>=flow.candidates.count,flow.complete || flow.candidates.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+            for row in flow.candidates {
+                guard row.strategy=="orderflow",row.price.isFinite,row.price>0,row.referenceDate==previousDate,
+                      row.flowNet.map({$0.isFinite && $0>=20000000})==true,
+                      row.flowNetRatio.map({$0.isFinite && $0>=0.03 && $0<=1})==true,
+                      row.flowObservedAt.map({$0.isFinite && $0<=generatedAt+15 && generatedAt-$0<=180})==true else { throw CocoaError(.fileReadCorruptFile) }
+            }
+        }
         if let bottom=bottomVolume {
             let rule=bottom.ruleVersion ?? 1
             guard [1,2].contains(rule),slot==date+"-1430",bottom.lookback==60,["ready","empty","blocked"].contains(bottom.status),
@@ -164,6 +184,7 @@ struct RealtimeCandidate: Codable, Identifiable {
     let marketCap: Double?
     let low60:Double?
     let distanceLow60:Double?
+    let flowNet:Double?;let flowNetRatio:Double?;let flowNet3:Double?;let flowPositiveDays:Int?;let flowObservedAt:Double?
 }
 
 struct RealtimeReview: Codable, Identifiable {
@@ -213,7 +234,7 @@ func realtimeDate(_ timestamp: Double) -> String {
 }
 
 func realtimeStrategy(_ id: String) -> String {
-    ["overnight":"一夜持股 · 正文版","golden":"黄金半小时 · 七步法","bottom_volume":"底部放量 · 2.5倍上涨"][id] ?? id
+    ["orderflow":"大单承接 · 盘中观察","overnight":"一夜持股 · 正文版","golden":"黄金半小时 · 七步法","bottom_volume":"底部放量 · 2.5倍上涨"][id] ?? id
 }
 
 struct RealtimeStrategyGuide: Identifiable {
@@ -225,7 +246,7 @@ struct RealtimeStrategyGuide: Identifiable {
     let sourceName: String
     let sourceURL: String?
     var title: String { realtimeStrategy(id) }
-    static let schedule = "北京时间交易日14:30执行三套策略；底部放量仅在14:30检查，原两套策略在14:45、14:50继续复核。Mac优先，失联时服务器接管；筛选完成后手机收到提醒。"
+    static let schedule = "北京时间交易日14:30执行四套策略；大单承接和底部放量仅在14:30检查，原两套策略在14:45、14:50继续复核。Mac优先，失联时服务器接管；筛选完成后手机收到提醒。"
     static let scope = "沪深A股，排除ST与退市标记，至少60根历史日线。历史数据截至前一交易日；当日行情超过3分钟、存在异常或覆盖不足时，暂停本轮或剔除异常股票。"
     static let all: [RealtimeStrategyGuide] = [
         .init(id: "overnight", summary: "寻找尾盘放量上涨、趋势或突破形态成立的股票，作为隔夜观察候选。",
@@ -248,6 +269,7 @@ struct RealtimeStrategyGuide: Identifiable {
               ], review: ["缺少完整分钟数据时，分时条件显示“待核验”，不会当作通过。", "“全天分时强于大盘”仍需人工核查，不用一个时点的涨幅替代。", "公告风险和流通股本变化仍需复核。"],
               interpretation: "“待分时核验”表示已满足基础量价条件，但七步法还没有全部确认。即使分时回踩通过，也仍须复核大盘分时和公告；规则匹配不等于盈利保证。",
               sourceName: "量化策略星 · 尾盘选股法", sourceURL: "https://www.xiaohongshu.com/explore/6a59eeac000000001102edb4"),
+        .init(id:"orderflow",summary:"14:30核验有日期的大单资金流、连续性与当前量价，完成后独立提醒。",conditions:[OrderflowGuide.rules[2],OrderflowGuide.rules[5]],review:["盘中观察需等待收盘确认","不追高，核查公告风险"],interpretation:OrderflowGuide.rules[6],sourceName:"固定研究规则 · 达塔有日期数据",sourceURL:nil),
         .init(id:"bottom_volume",summary:"交易日14:30，寻找近60日低位、累计成交量达到前5日日均量2.5倍及以上，且当日上涨的股票。",
               conditions:["只在交易日14:30这一轮执行；14:45和14:50不重算、不覆盖这份结果。",
                           "最新价位于前60个完整交易日最低价上方0%–10%，不低于该历史低点。历史低价按前一交易日复权口径锚定。",

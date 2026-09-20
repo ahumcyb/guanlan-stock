@@ -53,6 +53,15 @@ struct RealtimeScreen: View {
                         if store.realtimeHistory.isEmpty { Text("暂无已保存轮次").foregroundStyle(.secondary) }
                     }
                 }
+                Section("14:30 · 大单承接") {
+                    if let report=store.realtime?.lastFlow,let flow=report.orderflow {
+                        Text(dateText(report.date)+" · "+flow.message).font(.subheadline)
+                        ForEach(flow.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: {
+                            HStack { Text(row.name);Spacer();Text(String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
+                        } }
+                        if flow.complete && flow.candidates.isEmpty { Text("该轮检查完成，0只候选").foregroundStyle(.secondary) }
+                    } else { Text("等待下一交易日14:30检查").foregroundStyle(.secondary) }
+                }
                 Section("14:30 · 底部放量2.5倍上涨") {
                     if let report=store.realtime?.lastBottom,let bottom=report.bottomVolume {
                         Text("\(dateText(report.date)) · 命中 \(bottom.matchedCount) 只，展示 \(bottom.candidates.count) 只").font(.subheadline)
@@ -163,6 +172,12 @@ struct RealtimeHistoryDetail:View {
                                 if rows.isEmpty { Text("本轮已完成筛选，0 只候选").foregroundStyle(.secondary) }
                                 ForEach(rows) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f  %+.2f%%",row.price,row.change)).monospacedDigit() } } }
                             }
+                        }
+                    }
+                    if let flow=report.orderflow {
+                        Section("14:30 · 大单承接") {
+                            Text(flow.message)
+                            ForEach(flow.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { Text(row.name+" · "+String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) } }
                         }
                     }
                     if let bottom=report.bottomVolume {

@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from engine.close_proof import valid_date,ZONE
 from engine.snapshot_protocol import REVISION
-from .artifacts import STRATEGIES,HISTORICAL_STRATEGIES,GENERATION,MAX_REPORT,checked_file
+from .artifacts import published_strategies,STRATEGIES,HISTORICAL_STRATEGIES,GENERATION,MAX_REPORT,checked_file
 from .daily_performance import validate_selections
 
 
@@ -43,7 +43,7 @@ def save_snapshot(root,date,generation,revision,strategies,published_at=None):
     root=Path(root).resolve()
     value=dict(date=date,generation=generation,data_revision=revision,
         timing_basis='closing_receipt' if published_at is not None else 'legacy_generation',
-        published_at=published_at,strategies=[dict(id=row['id'],name=row['name'],picks=[
+        published_at=published_at,strategies=[dict(id=row['id'],name=row['name'],**({'data_status':row['data_status']} if 'data_status' in row else {}),picks=[
             {key:pick[key] for key in ['ts_code','name','close','rank']} for pick in row['picks']]) for row in strategies])
     validate_snapshot(value)
     folder=root/'jobs/daily/selections'/date
@@ -81,7 +81,7 @@ def eligible_before_open(snapshot,date):
 
 def read_legacy_generation(root,generation,date,receipt=None):
     root=Path(root).resolve();folder=root/'releases'/generation;groups=[];revision=None;universe=None
-    ids=STRATEGIES if (folder/'left_rebound/manifest.json').exists() else HISTORICAL_STRATEGIES
+    ids=published_strategies(folder)
     for strategy in ids:
         location=folder/strategy
         header=json.loads(checked_file(folder,location/'manifest.json',65536).read_text())
@@ -104,7 +104,7 @@ def read_legacy_generation(root,generation,date,receipt=None):
         picks=[row for row in stocks if row.get('state')=='入选']
         if len(picks)!=report.get('shortlist_count') or any(row.get('trade_date')!=date for row in picks):
             raise ValueError('历史精选日期或数量无效')
-        groups.append(dict(id=strategy,name=report['strategy_name'],picks=sorted(picks,key=lambda row:row['rank'])))
+        groups.append(dict(id=strategy,name=report['strategy_name'],data_status=(report.get('orderflow_status') or {}).get('status','complete'),picks=sorted(picks,key=lambda row:row['rank'])))
     return save_snapshot(root,date,generation,revision,groups,receipt['published_at'] if receipt else None)
 
 

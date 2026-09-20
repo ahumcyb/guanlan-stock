@@ -35,7 +35,7 @@ class SelectionSnapshotTests(unittest.TestCase):
             value=find_previous_snapshot(root,DATE,'20260907')
             self.assertEqual(value['timing_basis'],'closing_receipt')
             self.assertEqual(value['published_at'],NOW.timestamp())
-            self.assertEqual(len(value['strategies']),4)
+            self.assertEqual(len(value['strategies']),5)
 
     def test_corrupt_saved_snapshot_does_not_silently_fall_back_to_another_version(self):
         with tempfile.TemporaryDirectory() as folder:

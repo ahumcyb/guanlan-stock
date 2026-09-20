@@ -87,6 +87,37 @@ def validate_bottom(bottom,job,now):
             if not isinstance(row.get(key),list) or len(row[key])>10 or not all(bounded_text(v,100) for v in row[key]):raise ValueError('底部放量说明无效')
 
 
+
+def validate_orderflow(flow,job,now):
+    if (job.get('id')!=job['date']+'-1430' or not isinstance(flow,dict) or flow.get('rule_version')!=1
+            or flow.get('status') not in ['ready','empty','blocked'] or not bounded_text(flow.get('message'))
+            or any(type(flow.get(k)) is not int for k in ['requested','verified','matched_count'])
+            or not 0<=flow['matched_count']<=flow['verified']<=flow['requested']<=100
+            or not isinstance(flow.get('candidates'),list) or len(flow['candidates'])>10
+            or any(not valid_number(flow.get(k)) for k in ['checked_at','oldest_quote_at'])):
+        raise ValueError('大单承接结果格式无效')
+    complete=flow['status'] in ['ready','empty'];rows=flow['candidates']
+    if (complete and (flow['verified']!=flow['requested'] or not -15<=now-flow['oldest_quote_at']<=180)
+            or flow['status']!='ready' and (rows or flow['matched_count'])
+            or flow['status']=='ready' and not rows or flow['matched_count']<len(rows)):
+        raise ValueError('大单承接覆盖或状态无效')
+    seen=set()
+    for row in rows:
+        if (not isinstance(row,dict) or row.get('strategy')!='orderflow' or not isinstance(row.get('ts_code'),str)
+                or not CODE.fullmatch(row['ts_code']) or row['ts_code'] in seen
+                or not bounded_text(row.get('name'),30) or not bounded_text(row.get('state'),40)
+                or row.get('reference_date')!=job['previous_date']
+                or any(not valid_number(row.get(k)) for k in ['price','change','quote_at','volume_multiple','volume_ratio','vwap','flow_net','flow_net_ratio','flow_net3','flow_positive_days','flow_observed_at'])
+                or row['price']<=0 or not .3-1e-6<=row['change']<=5+1e-6 or not 1<=row['volume_multiple']<=3
+                or row['vwap']<=0 or row['price']<row['vwap'] or row['flow_net']<20e6 or not .03<=row['flow_net_ratio']<=1
+                or row['flow_net3']<=0 or row['flow_positive_days'] not in [2,3]
+                or any(not -15<=now-row[k]<=180 or local_now(row[k]).strftime('%Y%m%d')!=job['date'] for k in ['quote_at','flow_observed_at'])):
+            raise ValueError('大单承接候选或源时间无效')
+        seen.add(row['ts_code'])
+        for key in ['checks','pending']:
+            if not isinstance(row.get(key),list) or len(row[key])>10 or not all(bounded_text(v,100) for v in row[key]):raise ValueError('大单承接说明无效')
+
+
 def validate_report(report, job, now):
     if not isinstance(report, dict) or len(json.dumps(report, allow_nan=False).encode()) > 128 * 1024:
         raise ValueError('盘中结果格式无效')
@@ -136,6 +167,7 @@ def validate_report(report, job, now):
                 or any(not valid_number(row.get(k)) for k in ['price', 'reference_price', 'change', 'quote_at'])
                 or row['price'] <= 0 or row['reference_price'] <= 0 or not -15 <= now - row['quote_at'] <= 180):
             raise ValueError('复查行情无效')
+    if report.get('orderflow') is not None:validate_orderflow(report['orderflow'],job,now)
     if report.get('bottom_volume') is not None:validate_bottom(report['bottom_volume'],job,now)
     return report
 
@@ -221,6 +253,12 @@ class RealtimeStore:
 
     def public(self):
         state = self.state();nodes = self.read('nodes.json', {});now = self.clock();lease = state.get('lease', {})
+        last_flow=next((r for r in reversed(state['runs']) if r.get('orderflow') is not None),None)
+        if last_flow is None:
+            for item in self.history():
+                if 'orderflow_status' in item:
+                    try:last_flow=self.run(item['slot']);break
+                    except (OSError,ValueError,KeyError):continue
         last_screen=next((r for r in reversed(state['runs']) if r['kind']=='screen' and r['status'] in ['ready','empty']),None)
         last_bottom=next((r for r in reversed(state['runs']) if (r.get('bottom_volume') or {}).get('status') in ['ready','empty']),None)
         if last_screen is None or last_bottom is None:
@@ -239,7 +277,7 @@ class RealtimeStore:
             running=lease.get('expires_at', 0) > now, executor=lease.get('executor', ''),
             schedule=['14:30 初筛', '14:45 复核', '14:50 提醒'],
             events=list(reversed(state['events'][-30:])), latest=dict(state['runs'][-1],run_state=run_state(state['runs'][-1])) if state['runs'] else None,
-            last_screen=last_screen,last_bottom=last_bottom)
+            last_screen=last_screen,last_bottom=last_bottom,last_flow=last_flow)
 
     def history(self):return RealtimeArchive(self.root).history()
     def run(self,slot):return RealtimeArchive(self.root).run(slot)
@@ -368,6 +406,14 @@ class RealtimeStore:
         if report['status'] == 'closed' or report['kind'] == 'prepare':
             return
         slot = report['slot'];clock = slot[-4:];label = clock[:2] + ':' + clock[2:]
+        flow=report.get('orderflow')
+        if flow:
+            complete=flow['status'] in ['ready','empty']
+            title='观澜 · 14:30 大单承接'+(f" {flow['matched_count']}只" if complete else '未完成')
+            body=flow['message']
+            if flow['candidates']:body+='\n'+'；'.join(r['name']+'('+r['ts_code'][:6]+')' for r in flow['candidates'])
+            body+='\n点击查看盘中观察结果，收盘后另行确认。'
+            self.event(state,title,body,'screen' if complete else 'data',slot+'-orderflow',run_id=slot)
         bottom=report.get('bottom_volume')
         if bottom and bottom['status'] in ['ready','empty']:
             total=bottom['matched_count'];rows=bottom['candidates']

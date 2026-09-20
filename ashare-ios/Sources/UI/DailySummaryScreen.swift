@@ -110,6 +110,7 @@ struct DailySummaryScreen:View {
                         if !AfterCloseStrategies.ids.contains(group.id) { Text("此前策略 · 保留历史结算").font(.caption2).foregroundStyle(MobileTheme.amber) }
                         Text("昨日 \(group.selectedCount) 只 · 结算 \(group.settledCount) 只\n上涨 \(group.upCount) / 下跌 \(group.downCount) / 平盘 \(group.flatCount)").font(.caption).foregroundStyle(.secondary)
                         if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(MobileTheme.amber) }
+                        if group.status=="unavailable" { Text("上一交易日该策略数据未完成，未结算。") }
                         if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(.secondary) }
                         DisclosureGroup("逐股结算") {
                             ForEach(group.rows) { row in
@@ -189,7 +190,7 @@ struct DailySummaryScreen:View {
     private func strategyCard(_ strategy:DailyStrategyFacts)->some View {
         ResearchCard { VStack(alignment:.leading,spacing:12) {
             HStack { Text(strategy.name).font(.headline);Spacer();StatePill(text:"\(strategy.shortlistCount) 只精选") }
-            Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.caption).foregroundStyle(.secondary)
+            Text(strategy.dataStatus=="incomplete" ? (strategy.dataMessage ?? "本策略数据未完成") : "符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.caption).foregroundStyle(.secondary)
             if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.caption).foregroundStyle(MobileTheme.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.subheadline).foregroundStyle(.secondary) }
             ForEach(strategy.picks) { row in

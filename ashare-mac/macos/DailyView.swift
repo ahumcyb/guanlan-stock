@@ -97,7 +97,7 @@ struct DailySummaryView:View {
                     ForEach(report.evidence.warnings,id:\.self) { Text($0).font(.system(size:11)).foregroundStyle(Palette.amber) }
                     Text("生成于 \(dailyTime(report.generatedAt)) · 量价来源：已核验的收盘数据。行业数据为成分股等权均值，非行业指数；AI 未核验新闻、公告或财务，不改变选股规则。").font(.system(size:11)).foregroundStyle(Palette.muted).lineSpacing(5)
                 } else {
-                    Panel { EmptyViewMessage(icon:"sun.horizon",title:"等待收盘后的完整总结",message:"16:10 起核验当日行情，再生成市场、行业与四套策略复盘。可以在总结设置中更换 DeepSeek Key。") }
+                    Panel { EmptyViewMessage(icon:"sun.horizon",title:"等待收盘后的完整总结",message:"16:10 起核验当日行情，再生成市场、行业与五套策略复盘。可以在总结设置中更换 DeepSeek Key。") }
                 }
             }.padding(30)
         }
@@ -193,6 +193,7 @@ struct DailySummaryView:View {
                         HStack { Text(group.name).font(.system(size:13,weight:.semibold));if !AfterCloseStrategies.ids.contains(group.id) { Badge(text:"历史策略",color:Palette.amber) };Spacer();Text(group.meanReturnPct.map(dailyChange) ?? "—").monospacedDigit().foregroundStyle((group.meanReturnPct ?? 0)>=0 ? Palette.up:Palette.down) }
                         Text("昨日 \(group.selectedCount) 只 · 已结算 \(group.settledCount) 只 · 上涨 \(group.upCount) / 下跌 \(group.downCount) / 平盘 \(group.flatCount)").font(.system(size:11)).foregroundStyle(Palette.muted)
                         if group.status=="partial" { Text("存在未结算股票，整体均值暂不展示。").font(.caption).foregroundStyle(Palette.amber) }
+                        if group.status=="unavailable" { Text("上一交易日该策略数据未完成，未结算。") }
                         if group.status=="no_picks" { Text("上一交易日没有精选。").font(.caption).foregroundStyle(Palette.muted) }
                         DisclosureGroup("逐股结算") {
                             ForEach(group.rows) { row in
@@ -273,7 +274,7 @@ struct DailySummaryView:View {
     private func strategyPanel(_ strategy:DailyStrategyFacts)->some View {
         Panel { VStack(alignment:.leading,spacing:12) {
             HStack { Text(strategy.name).font(.headline);Spacer();Badge(text:"\(strategy.shortlistCount) 只精选") }
-            Text("符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.system(size:11)).foregroundStyle(Palette.muted)
+            Text(strategy.dataStatus=="incomplete" ? (strategy.dataMessage ?? "本策略数据未完成") : "符合条件 \(strategy.confirmedCount) 只 · 等待 \(strategy.watchingCount) 只").font(.system(size:11)).foregroundStyle(Palette.muted)
             if strategy.marketFilterApplies==true && strategy.marketFilterPassed==false { Text("市场宽度未达到 \(percent(strategy.marketFilterThreshold ?? 0.4)) 门槛，暂停新候选。").font(.system(size:11)).foregroundStyle(Palette.amber) }
             if strategy.picks.isEmpty { Text("当日暂无符合全部条件的精选候选。").font(.system(size:12)).foregroundStyle(Palette.muted) }
             ForEach(strategy.picks) { stock in

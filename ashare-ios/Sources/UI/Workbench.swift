@@ -64,7 +64,13 @@ struct Workbench:View {
                                     DisclosureGroup("股票池与规则概况") {
                                     HStack { Metric(label:"有效股票池",value:report.eligibleCount.formatted());Metric(label:report.conditionLabel ? "符合条件":"转强确认",value:report.confirmedCount.formatted());Metric(label:"市场宽度",value:percent(report.breadth),color:MobileTheme.teal) }
                                     HStack { Text("持有研究 1–5 日");Spacer();Text(report.regime) }.font(.caption).foregroundStyle(.secondary)
-                                    if report.isMomentum60 {
+                                    if report.isOrderflow {
+                                        DisclosureGroup("大单承接 · 规则与覆盖") {
+                                            Text(OrderflowGuide.summary).font(.subheadline)
+                                            if let status=report.orderflowStatus { Text(status.message).foregroundStyle(MobileTheme.amber) }
+                                            ForEach(OrderflowGuide.rules,id:\.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                                        }
+                                    } else if report.isMomentum60 {
                                         Text("市场宽度仅作环境参考，不参与本策略筛选。").font(.caption).foregroundStyle(.secondary)
                                         Text(Momentum60Guide.evidence).font(.caption).foregroundStyle(MobileTheme.amber).lineSpacing(3)
                                         DisclosureGroup("60 日风险调整动量说明") {

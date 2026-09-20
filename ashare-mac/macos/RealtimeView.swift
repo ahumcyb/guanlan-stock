@@ -107,6 +107,16 @@ struct RealtimeView: View {
                         else { Text("下一交易日14:30开始检查。尚无这套策略的完整结果，未记为0只。").font(.system(size:12)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading).padding(12) }
                     }
                 }
+                if let report=selectedSlot.isEmpty ? store.state?.lastFlow : displayed,let flow=report.orderflow {
+                    GroupBox("14:30 · 大单承接") {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(dateText(report.date)+" · "+flow.message)
+                            ForEach(flow.candidates) { row in
+                                ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,focus:nil,through:nil)) { Text(row.name+" · "+String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
+                            }
+                        }.frame(maxWidth:.infinity,alignment:.leading).padding(12)
+                    }
+                }
                 if let report = displayed {
                     HStack {
                         Text("\(dateText(report.date)) · \(realtimeSlot(report.slot)) · \(report.executionLabel)").font(.headline)

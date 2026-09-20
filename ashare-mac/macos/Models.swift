@@ -1,13 +1,14 @@
 import Foundation
 
 enum AfterCloseStrategies {
-    static let ids = ["leaders", "pullback", "golden_pit", "left_rebound"]
+    static let previousIds = ["leaders", "pullback", "golden_pit", "left_rebound"]
+    static let ids = previousIds + ["orderflow"]
     static let historicalIds = ["leaders", "pullback", "golden_pit", "momentum_60"]
     static let supportedIds = ids + ["momentum_60"]
-    static func validGroup(_ values:[String])->Bool { values.count==4 && (Set(values)==Set(ids) || Set(values)==Set(historicalIds)) }
+    static func validGroup(_ values:[String])->Bool { values.count==Set(values).count && (Set(values)==Set(ids) || Set(values)==Set(previousIds) || Set(values)==Set(historicalIds)) }
     static func activeChoice(_ saved:String?)->String { saved=="momentum_60" ? "left_rebound" : (ids.contains(saved ?? "") ? saved!:"leaders") }
     static func shortName(_ id:String)->String {
-        ["leaders":"流动性趋势", "pullback":"缩量回踩", "golden_pit":"黄金坑", "left_rebound":"左侧低吸", "momentum_60":"60 日动量（历史）"][id] ?? id
+        ["orderflow":"大单承接", "leaders":"流动性趋势", "pullback":"缩量回踩", "golden_pit":"黄金坑", "left_rebound":"左侧低吸", "momentum_60":"60 日动量（历史）"][id] ?? id
     }
 }
 
@@ -50,6 +51,8 @@ struct Stock: Decodable, Identifiable, Hashable {
     let vol60: Double?; let momentumRatio: Double?
     let leftRsi5:Double?;let leftDrawdown60:Double?;let leftVolume5:Double?
     let leftMa60Slope10:Double?;let leftDistanceLow20:Double?
+    let flowNet:Double?;let flowNetRatio:Double?;let flowNet3:Double?;let flowPositiveDays:Int?
+    let flowLateReturn:Double?;let flowLateVolume:Double?
     var id: String { tsCode }
     var symbol: String { String(tsCode.prefix(6)) }
 }
@@ -94,11 +97,13 @@ struct Report: Decodable {
     let lastUpdate: UpdateResult?
     let strategyId: String?; let strategyName: String?
     let dataRevision:String?
+    let orderflowStatus:OrderflowStatus?
+    var isOrderflow:Bool { strategyId=="orderflow" }
     var isLeaders:Bool { strategyId=="leaders" }
     var isGoldenPit:Bool { strategyId=="golden_pit" }
     var isMomentum60:Bool { strategyId=="momentum_60" }
     var isLeft:Bool { strategyId=="left_rebound" }
-    var conditionLabel:Bool { isMomentum60 || isLeft }
+    var conditionLabel:Bool { isMomentum60 || isLeft || isOrderflow }
 }
 
 enum LeftReboundGuide {
@@ -163,4 +168,20 @@ func csvCell(_ value:String)->String {
     let formula=first.map { ["=","+","-","@"].contains(String($0)) } ?? false
     let safe=formula && Double(value)==nil ? "'"+value:value
     return "\""+safe.replacingOccurrences(of:"\"",with:"\"\"")+"\""
+}
+
+struct OrderflowStatus:Decodable {
+    let status:String;let date:String;let requested:Int;let verified:Int;let replayVerified:Int;let message:String
+}
+enum OrderflowGuide {
+    static let summary="结合有交易日期的大单资金流和盘口复盘，观察资金持续流入、价格不过热且尾盘承接稳定的股票。用于1–5日研究观察，尚未验证盈利优势。"
+    static let rules=[
+        "盘后：沪深非ST股票，至少80根日线且最近60日连续；股价≥3元、20日均成交额≥1亿元、ATR≤6%，复权因子和涨跌停价齐备。基础池站上MA20比例至少40%。",
+        "日线初筛：上涨0.3%–5%，位于MA20上方0%–8%，5日涨幅≤12%，收在日内振幅上部35%，成交额为20日均额1–3倍，不封涨跌停。按20日均额取前200只核验资金流。",
+        "大单确认：供应商定义的大单加超大单净流入≥2000万元，占当日成交额≥3%；含当日的三个交易日中至少两日净流入且合计为正。资金流是规模分类估算，不代表机构身份。",
+        "盘口确认：D3复盘须与日线收盘价、累计量相符；不可用时用达塔完整240分钟行情复核日线量额；收盘不低于14:30价格，最后半小时成交量占全天至少8%。不使用未成交挂单或单位未核验的盘口金额。",
+        "评分：净流入强度35、连续性15、收盘位置20、尾盘量占比15、波动风险15；最多10只，每行业最多2只。数据缺失或过期则不生成本策略精选，其他策略独立运行。",
+        "14:30盘中版：使用已完成历史日线和执行时刻的新鲜行情，先从历史基础池按20日均额取前100只，再用实时行情筛选；价格高于日内均价和MA20，涨幅0.3%–5%，累计量为前5日均量1–3倍，再核验同样的资金流条件。按净流入占比列前10只，不使用收盘条件。",
+        "大额成交接口暂缺可靠交易日期，首版不计入信号。历史大单样本未齐，不以日线代理生成胜率；从真实发布的精选记录观察次日表现。次日高开超过3%或涨停不追，支持与失效价格仅作研究参考。"
+    ]
 }

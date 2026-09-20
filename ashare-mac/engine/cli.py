@@ -70,10 +70,15 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             raise ValueError('日线与交易日历不一致')
         progress(f'计算 {bars.ts_code.nunique():,} 只股票的趋势、量能与风险…')
         computed = features(bars,market_dates=market_dates)
-        if strategy in ['momentum_60','left_rebound']:
+        if strategy in ['momentum_60','left_rebound','orderflow']:
             from .momentum import add_constraints
             computed = add_constraints(computed, factors, limits)
         signals = classify(computed,strategy=strategy)
+        orderflow_status=None
+        if strategy=='orderflow':
+            from .orderflow import collect_daily
+            progress('核验有日期的大单资金流与盘口复盘…')
+            signals,orderflow_status=collect_daily(signals,asof,market_dates)
         del computed
         latest = signals[signals.trade_date==asof]
         shortlist = select_day(latest)
@@ -103,9 +108,13 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         if strategy == 'left_rebound':
             from .left_rebound import METRICS
             keep += METRICS
+        if strategy=='orderflow':
+            from .orderflow import METRICS
+            keep += METRICS
         stocks = all_latest[keep].sort_values(['score','ts_code'],ascending=[False,True])
         progress('检验 1 / 3 / 5 日信号：次日开盘、真实涨跌停价、成本压力…')
-        backtest = study(signals, factors, limits, market_dates)
+        backtest = (dict(start='',end=asof,horizons=[],monthly=[],events=[],benchmark_label='大单历史数据尚未建立可验证样本，不展示代理回测')
+                    if strategy=='orderflow' else study(signals, factors, limits, market_dates))
         now = datetime.now(ZoneInfo('Asia/Shanghai'))
         from .market_clock import market_status
         opened=calendar.loc[calendar.is_open==1,'cal_date'].astype(str).tolist()
@@ -116,6 +125,8 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
         warnings = ['历史股票名单与 ST 状态缺少逐日快照，存在幸存者偏差；当前行业也用于历史分组。',
                     '固定参数的历史信号研究，样本会重叠；尚未完成独立样本外与模拟实盘验证。',
                     '按日线与实际限制价估计成交，未建模盘口、最小佣金与整数手数；不构成组合收益。']
+        if strategy=='orderflow':
+            warnings=[orderflow_status['message'],'新研究策略：仅使用有源日期的资金流与盘口价格、累计量；D3缺失时用达塔完整分钟路径复核；大额成交接口缺交易日期，暂未纳入。','资金流是供应商按成交规模分类的估算，不代表机构身份；尚无独立样本外盈利验证。','限定日线初筛后成交额前200只，缺数时不出精选；从发布日起积累真实候选，不以日线代理补造历史胜率。']
         if strategy == 'momentum_60':
             warnings[0] = '此处历史事件按当前股票名称过滤，存在名单与 ST 状态回溯偏差；本策略不设行业限额。'
             warnings.insert(0, '新增研究策略：2026 年 1–4 月选择期资金账本胜率 48.69%，净收益 +1.99%；开发期净收益 -6.34%，尚未通过完整验证。此页全期事件统计属于事后观察，不能替代封存研究。')
@@ -151,7 +162,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             regime='防守' if breadth<.4 else ('谨慎' if breadth<.6 else '积极'),
             stale_sessions=stale_sessions, missing_adjustment_today=missing_adj, missing_limits_today=missing_limit,
             sources=sources, warnings=warnings, stocks=records(stocks), backtest=backtest,
-            last_update=last_update)
+            last_update=last_update,orderflow_status=orderflow_status)
         generation = now.strftime('%Y%m%dT%H%M%S')+'-'+os.urandom(3).hex()
         stage = output/('.staging-'+generation)
         stage.mkdir(); (stage/'charts').mkdir()

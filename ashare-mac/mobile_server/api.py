@@ -12,7 +12,7 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .artifacts import STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
+from .artifacts import PREVIOUS_STRATEGIES,STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
 from .queue import JobQueue,canonical_uuid
 from .realtime import RealtimeStore
 from .daily import DailyStore
@@ -71,6 +71,10 @@ class Service:
         parsed=urlsplit(target)
         if parsed.query or '%' in parsed.path or '..' in parsed.path:raise Failure(400,'INVALID_PATH','请求路径无效')
         parts=parsed.path.strip('/').split('/')
+        extended=parts[:1]==['v2']
+        if extended:
+            if len(parts)<2 or parts[1] not in ['status','daily']:raise Failure(404,'NOT_FOUND','接口不存在')
+            parts[0]='v1'
         if parts==['v1','watchlist']:
             store=WatchlistStore(self.root)
             if method=='GET':return 200,store.public()
@@ -78,10 +82,10 @@ class Service:
                 try:return 200,store.apply(json.loads(body))
                 except (ValueError,TypeError,KeyError):raise Failure(400,'INVALID_WATCHLIST','自选操作无效，请重新同步后重试')
         if parts[:2]==['v1','daily']:
-            if method=='GET' and len(parts)==2:return 200,self.daily.public()
+            if method=='GET' and len(parts)==2:return 200,self.daily.public() if extended else legacy_daily(self.daily.public())
             if method=='GET' and len(parts)==3:
                 if not valid_date(parts[2]):raise Failure(400,'INVALID_DATE','收盘总结日期无效')
-                return 200,self.daily.report(parts[2])
+                return 200,self.daily.report(parts[2]) if extended else legacy_daily(self.daily.report(parts[2]))
             if method=='POST' and len(parts)==3:
                 try:
                     value=json.loads(body)
@@ -157,7 +161,7 @@ class Service:
             info=self.queue.capabilities()
             online=time.time()-info.get('heartbeat',0)<30
             available={}
-            for strategy in STRATEGIES:
+            for strategy in (STRATEGIES if extended else PREVIOUS_STRATEGIES):
                 try:available[strategy]=current_manifest(self.root,strategy)
                 except (OSError,ValueError,KeyError):pass
             return 200,dict(schema_version=1,job=self.state(),worker_online=online,mac_online=self.queue.mac_online(),
@@ -235,6 +239,26 @@ class BoundedServer(ThreadingMixIn,HTTPServer):
     def process_request_thread(self,request,address):
         try:super().process_request_thread(request,address)
         finally:self.slots.release()
+
+
+
+def legacy_daily(value):
+    """Project a read-only v1 view; immutable v2 evidence on disk is unchanged."""
+    import copy
+    from .daily import evidence_hash
+    value=copy.deepcopy(value)
+    def project(report):
+        evidence=report.get('evidence')
+        if not isinstance(evidence,dict):return
+        evidence['strategies']=[g for g in evidence.get('strategies',[]) if g.get('id')!='orderflow']
+        if isinstance(evidence.get('selection_changes'),list):evidence['selection_changes']=[g for g in evidence['selection_changes'] if g.get('id')!='orderflow']
+        performance=evidence.get('performance') or {}
+        if 'strategies' in performance:performance['strategies']=[g for g in performance['strategies'] if g.get('id')!='orderflow']
+        if 'new_strategy_ids' in performance:performance['new_strategy_ids']=[s for s in performance['new_strategy_ids'] if s!='orderflow']
+        report['evidence_sha256']=evidence_hash(evidence)
+    project(value)
+    if isinstance(value.get('latest'),dict):project(value['latest'])
+    return value
 
 
 if __name__=='__main__':

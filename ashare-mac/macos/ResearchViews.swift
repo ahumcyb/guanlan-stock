@@ -95,7 +95,7 @@ struct DataView:View {
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:22) {
-                pageTitle("数据管理",subtitle:store.publishedMode ? "四策略统一计算并校验发布，Mac 与手机读取同一版本。":"独立本地研究使用选定的数据目录。")
+                pageTitle("数据管理",subtitle:store.publishedMode ? "多策略统一计算并校验发布，Mac 与手机读取同一版本。":"独立本地研究使用选定的数据目录。")
                 if store.publishedAPI != nil {
                     Toggle("独立本地研究",isOn:Binding(get:{store.localResearch},set:{store.setLocalResearch($0)})).disabled(store.busy)
                 }
@@ -107,7 +107,7 @@ struct DataView:View {
                         HStack {
                             Button("同步最新结果") { Task { await store.synchronizePublished() } }
                             Button("更新数据并选股") { store.run(update:true) }.buttonStyle(.borderedProminent)
-                            Button("重算四套策略") { store.run(update:false) }
+                            Button("重算五套策略") { store.run(update:false) }
                         }.disabled(store.busy || store.serverStatus?.job.active==true)
                         Text(store.favoritesMessage).font(.caption).foregroundStyle(Palette.muted)
                     } }
@@ -190,6 +190,11 @@ struct StrategyView:View {
                 RealtimeStrategyDescriptions()
                 Divider().padding(.vertical,10)
                 Text("盘后研究策略").font(.system(size:20,weight:.semibold))
+                Panel { VStack(alignment:.leading,spacing:13) {
+                    Text("大单承接").font(.system(size:20,weight:.semibold))
+                    Text(OrderflowGuide.summary)
+                    ForEach(OrderflowGuide.rules,id:\.self) { Text($0).font(.system(size:12)).foregroundStyle(Palette.muted) }
+                } }
                 Panel { VStack(alignment:.leading,spacing:13) {
                     HStack { Text("左侧低吸").font(.system(size:20,weight:.semibold)); Spacer(); Badge(text:"新增 · 研究",color:Palette.amber) }
                     Text(LeftReboundGuide.summary).font(.system(size:13)).foregroundStyle(Palette.muted).lineSpacing(5)

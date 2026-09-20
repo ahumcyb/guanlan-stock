@@ -85,7 +85,9 @@ struct WorkspaceView:View {
                     Metric(label:report.conditionLabel ? "符合条件":"转强确认",value:String(report.confirmedCount),note:report.isMomentum60 ? "精选最多 5 只":"精选最多 10 只")
                     Metric(label:report.isMomentum60 ? "环境参考":"市场宽度",value:percent(report.breadth),note:report.isMomentum60 ? "MA20 上方占比 · 不参与筛选":"MA20 上方占比 · \(report.regime)",color:Palette.teal)
                 }
-                if report.isMomentum60 {
+                if report.isOrderflow {
+                    Text(OrderflowGuide.summary+" "+(report.orderflowStatus?.message ?? "等待数据核验")).font(.system(size:11)).foregroundStyle(Palette.muted)
+                } else if report.isMomentum60 {
                     Text(Momentum60Guide.evidence).font(.system(size:10)).foregroundStyle(Palette.amber).lineSpacing(3)
                 } else if report.isLeft {
                     Text(LeftReboundGuide.summary+" 市场宽度门槛为 20%。").font(.system(size:10)).foregroundStyle(Palette.muted).lineSpacing(3)

@@ -88,7 +88,7 @@ import Combine
         defer { if operation==id { busy=false } }
         do {
             let selected=strategy
-            let server=try mobileDecoder().decode(ServerStatus.self,from:await api.request("/v1/status",limit:65536));status=server
+            let server=try mobileDecoder().decode(ServerStatus.self,from:await api.request("/v2/status",limit:65536));status=server
             try await synchronizePublishedBundle(api,cache:cache,manifests:server.reports)
             guard operation==id,strategy==selected else { return }
             snapshot=try cache.load(selected)
@@ -101,7 +101,7 @@ import Combine
     func refreshStatus() async {
         guard let api else { return }
         do {
-            let data=try await api.request("/v1/status",limit:65536)
+            let data=try await api.request("/v2/status",limit:65536)
             status=try mobileDecoder().decode(ServerStatus.self,from:data)
             if status?.job.active==true { message=status!.job.message }
         } catch { if snapshot==nil { self.error=error.localizedDescription } }
@@ -218,7 +218,7 @@ import Combine
     func refreshDaily() async {
         guard let api else { return }
         do {
-            let data=try await api.request("/v1/daily",limit:128*1024)
+            let data=try await api.request("/v2/daily",limit:128*1024)
             let value=try dailyCache.saveState(data);daily=value;dailyMessage=value.status.message
             if dailyDetail?.date==value.latest?.date { dailyDetail=value.latest }
         } catch { dailyMessage="收盘总结暂未连接，已有缓存仍可阅读。" }
@@ -229,7 +229,7 @@ import Combine
         guard let api else { return }
         dailyBusy=true;defer { dailyBusy=false }
         do {
-            let data=try await api.request("/v1/daily/\(date)",limit:128*1024)
+            let data=try await api.request("/v2/daily/\(date)",limit:128*1024)
             let value=try dailyCache.saveReport(data)
             guard value.date==date else { throw MobileFailure.invalidData };dailyDetail=value
         } catch { dailyMessage="该日期的总结尚未载入，可稍后重试。" }
@@ -239,7 +239,7 @@ import Combine
         dailyBusy=true;defer { dailyBusy=false }
         do {
             let body=try JSONSerialization.data(withJSONObject:values)
-            _=try await api.request("/v1/daily/\(action)",method:"POST",body:body,limit:65536)
+            _=try await api.request("/v2/daily/\(action)",method:"POST",body:body,limit:65536)
             await refreshDaily();return true
         } catch { dailyMessage=error.localizedDescription;return false }
     }

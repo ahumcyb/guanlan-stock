@@ -75,7 +75,7 @@ class MobileAPITests(unittest.TestCase):
 
     def outputs(self):
         outputs=self.root/'outputs'
-        for strategy in ['leaders','pullback','golden_pit','left_rebound']:
+        for strategy in ['leaders','pullback','golden_pit','left_rebound','orderflow']:
             folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True)
             report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[{'ts_code':'000001.SZ'}],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
             atomic_json(folder/'report.json',report);atomic_json(folder/'charts/000001.SZ.json',[{'date':'20260904'}])

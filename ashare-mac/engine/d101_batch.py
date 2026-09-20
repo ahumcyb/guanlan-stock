@@ -119,6 +119,10 @@ def capture_batch(base_url,codes,expected_date,connector=None,clock=time.time,bu
 def potential_codes(rows,features,now,include_bottom):
     """A deliberately wider envelope than any final rule; never truncate by rank."""
     result=set();elapsed=trading_minutes(now)
+    if include_bottom:
+        from .orderflow_intraday import flow_pool
+        previous=max((f.get('date','') for f in features.values()),default='')
+        result.update(flow_pool(features,list(rows.values()),previous,wide=True))
     for code,row in rows.items():
         feature=features.get(code,{})
         try:

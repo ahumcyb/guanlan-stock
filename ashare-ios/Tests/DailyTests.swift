@@ -6,7 +6,7 @@ import Foundation
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }
         let cache=DailyCache(root:root);let state=try cache.saveState(data)
-        assert(state.latest != nil && state.latest!.evidence.strategies.count==4)
+        assert(state.latest != nil && AfterCloseStrategies.validGroup(state.latest!.evidence.strategies.map(\.id)))
         let reloaded=try cache.loadState();assert(reloaded.latest?.date==state.latest?.date)
         let report=try cache.loadReport(state.latest!.date);assert(report.evidence.market.stockCount>0)
         if let realtime=report.evidence.realtimePerformance {
@@ -36,6 +36,6 @@ import Foundation
                 do { _=try cache.saveState(JSONSerialization.data(withJSONObject:invalid));assertionFailure("Invalid realtime settlement cached") } catch {}
             }
         }
-        print("Native daily model, four-strategy facts, offline cache and invalid-data rejection passed · \(report.date)")
+        print("Native daily model, versioned strategy facts, offline cache and invalid-data rejection passed · \(report.date)")
     }
 }

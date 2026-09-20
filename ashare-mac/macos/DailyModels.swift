@@ -59,7 +59,7 @@ struct DailyReport:Codable {
         try evidence.realtimePerformance?.validate(date:date)
         try evidence.marketChanges?.validate(date:date)
         if let changes=evidence.selectionChanges {
-            guard Set(changes.map(\.id))==Set(evidence.strategies.map(\.id)),changes.count==4 else { throw CocoaError(.fileReadCorruptFile) }
+            guard Set(changes.map(\.id))==Set(evidence.strategies.map(\.id)),changes.count==evidence.strategies.count else { throw CocoaError(.fileReadCorruptFile) }
             for change in changes { try change.validate(date:date) }
         }
     }
@@ -109,6 +109,7 @@ struct DailyStrategyFacts:Codable,Identifiable {
     let id:String;let name:String;let shortlistCount:Int;let confirmedCount:Int;let watchingCount:Int;let picks:[DailyPick]
     let marketFilterApplies:Bool?;let marketFilterPassed:Bool?
     let marketFilterThreshold:Double?
+    let dataStatus:String?;let dataMessage:String?
 }
 struct DailyPerformance:Codable {
     let signalDate:String?;let evaluationDate:String;let basis:String;let status:String
@@ -124,7 +125,7 @@ struct DailyPerformance:Codable {
                   group.settledCount>=0,group.settledCount<=group.selectedCount,
                   group.upCount>=0,group.downCount>=0,group.flatCount>=0,
                   group.upCount+group.downCount+group.flatCount==group.settledCount,
-                  ["complete","partial","no_picks"].contains(group.status),
+                  ["complete","partial","no_picks","unavailable"].contains(group.status),
                   group.status=="complete" ? (group.selectedCount>0 && group.settledCount==group.selectedCount && group.meanReturnPct?.isFinite==true):group.meanReturnPct==nil,
                   group.rows.filter({$0.status=="settled"}).count==group.settledCount,
                   group.rows.allSatisfy({["settled","unsettled"].contains($0.status) && ($0.status=="settled" ? $0.returnPct?.isFinite==true:$0.returnPct==nil)}) else { throw CocoaError(.fileReadCorruptFile) }

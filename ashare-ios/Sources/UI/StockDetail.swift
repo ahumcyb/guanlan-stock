@@ -30,7 +30,14 @@ struct MobileStockDetail:View {
                             condition("波动数据完整",detail:"60 日日收益波动 \(percent(stock.vol60))",passed:stock.pullbackOk)
                             condition("当日克制",detail:"当天涨幅不超过 5%",passed:stock.turnOk)
                             Text("原始动量比值 \(decimal(stock.momentumRatio))\n首页分数为候选内相对排名，不是胜率。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
-                        } else if manifest.strategy=="left_rebound" {
+                        } else if manifest.strategy=="orderflow" {
+                        VStack(alignment:.leading,spacing:6) {
+                            Text("大单净流入 " + (stock.flowNet.map { String(format:"%.0f万元",$0/10000) } ?? "未核验"))
+                            Text("占成交额 " + (stock.flowNetRatio.map { String(format:"%.2f%%",$0*100) } ?? "—"))
+                            Text("尾盘涨跌 " + (stock.flowLateReturn.map { String(format:"%+.2f%%",$0*100) } ?? "—"))
+                            Text("尾盘成交量占比 " + (stock.flowLateVolume.map { String(format:"%.1f%%",$0*100) } ?? "—"))
+                        }.font(.caption)
+                    } else if manifest.strategy=="left_rebound" {
                             condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))，跌幅不超过3%",passed:stock.trendOk)
                             condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))，最近5日下跌3%–12%",passed:stock.strengthOk)
                             condition("低位区域",detail:"60日回撤 \(percent(stock.leftDrawdown60)) · 距20日低价 \(percent(stock.leftDistanceLow20))",passed:stock.pullbackOk)

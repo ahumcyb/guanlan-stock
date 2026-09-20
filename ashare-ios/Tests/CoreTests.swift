@@ -15,6 +15,9 @@ import Foundation
         let cached=try cache.load("leaders");assert(cached?.manifest==manifest)
         var cachedStrategies=["leaders"]
         assert(AfterCloseStrategies.activeChoice("momentum_60")=="left_rebound")
+        assert(AfterCloseStrategies.validGroup(AfterCloseStrategies.ids))
+        assert(AfterCloseStrategies.validGroup(AfterCloseStrategies.previousIds))
+        assert(!AfterCloseStrategies.validGroup(AfterCloseStrategies.ids+["orderflow"]))
         for strategy in ["pullback","golden_pit","left_rebound","momentum_60"] {
             let folder=fixture.appendingPathComponent(strategy)
             // Old published fixtures remain valid during a staged app/server update.
@@ -51,7 +54,7 @@ import Foundation
         }
         if cachedStrategies.contains("left_rebound") {
             var manifests:[String:MobileManifest]=[:];var reports:[String:Data]=[:]
-            for strategy in AfterCloseStrategies.ids {
+            for strategy in AfterCloseStrategies.ids where FileManager.default.fileExists(atPath:fixture.appendingPathComponent(strategy+"/manifest.json").path) {
                 let folder=fixture.appendingPathComponent(strategy)
                 manifests[strategy]=try mobileDecoder().decode(MobileManifest.self,from:Data(contentsOf:folder.appendingPathComponent("manifest.json")))
                 reports[strategy]=try Data(contentsOf:folder.appendingPathComponent("report.json"))
@@ -59,7 +62,7 @@ import Foundation
             try cache.saveBundle(reports,manifests:manifests)
             reports["left_rebound"]!.append(32)
             do { try cache.saveBundle(reports,manifests:manifests);assertionFailure("Partial invalid bundle replaced complete cache") } catch {}
-            for strategy in AfterCloseStrategies.ids {
+            for strategy in AfterCloseStrategies.ids where FileManager.default.fileExists(atPath:fixture.appendingPathComponent(strategy+"/manifest.json").path) {
                 let saved=try cache.load(strategy);assert(saved?.manifest==manifests[strategy])
             }
             reports["left_rebound"]!.removeLast()

@@ -59,7 +59,7 @@ class DailyFactsTests(unittest.TestCase):
             facts=collect_evidence(root,market/'current',DATE,NOW.timestamp());result=facts['performance']
             self.assertEqual(result['status'],'available')
             self.assertEqual(result['signal_date'],'20260903')
-            self.assertEqual(result['new_strategy_ids'],['left_rebound'])
+            self.assertEqual(result['new_strategy_ids'],['left_rebound','orderflow'])
             self.assertEqual(result['strategies'][-1]['id'],'momentum_60')
             for group in result['strategies']:
                 self.assertEqual(group['rows'][0]['ts_code'],code)
@@ -77,7 +77,7 @@ class DailyFactsTests(unittest.TestCase):
             self.assertEqual(facts['market']['stock_count'],4001)
             self.assertEqual(facts['market']['unchanged'],4001)
             self.assertEqual(facts['market']['turnover_yi'],4001.)
-            self.assertEqual(len(facts['strategies']),4)
+            self.assertEqual(len(facts['strategies']),5)
             self.assertEqual(facts['sectors_strong'][0]['name'],'测试行业')
             self.assertNotIn('last_update',json.dumps(facts))
 

@@ -44,6 +44,13 @@ struct StockDetail: View {
                         condition("当日克制",detail:"当日涨幅 ≤5%",ok:stock.turnOk)
                         Text("原始动量比值 \(decimal(stock.momentumRatio)) · 分数为候选内排名，不是胜率")
                             .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
+                    } else if store.report?.isOrderflow==true {
+                        VStack(alignment:.leading,spacing:6) {
+                            Text("大单净流入 " + (stock.flowNet.map { String(format:"%.0f万元",$0/10000) } ?? "未核验"))
+                            Text("占成交额 " + (stock.flowNetRatio.map { String(format:"%.2f%%",$0*100) } ?? "—"))
+                            Text("尾盘涨跌 " + (stock.flowLateReturn.map { String(format:"%+.2f%%",$0*100) } ?? "—"))
+                            Text("尾盘成交量占比 " + (stock.flowLateVolume.map { String(format:"%.1f%%",$0*100) } ?? "—"))
+                        }.font(.caption)
                     } else if store.report?.isLeft==true {
                         condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))",ok:stock.trendOk)
                         condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))",ok:stock.strengthOk)

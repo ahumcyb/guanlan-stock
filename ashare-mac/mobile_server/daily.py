@@ -150,7 +150,7 @@ class DailyStore:
         with self.realtime.lock():
             events=self.realtime.state()
             title='观澜 · '+date[:4]+'-'+date[4:6]+'-'+date[6:]+' 收盘总结'
-            body='当日行情仍未完整，打开观澜查看状态。' if failure else '收盘复盘已生成，点击查看市场量价、四套策略与分析。'
+            body='当日行情仍未完整，打开观澜查看状态。' if failure else '收盘复盘已生成，点击查看市场量价、五套策略与分析。'
             self.realtime.event(events,title,body,'daily_review','daily-'+date+('-failure' if failure else ''),url='guanlan://daily?date='+date)
             self.realtime.save(events)
         with self.lock():

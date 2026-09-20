@@ -80,7 +80,7 @@ class ExtendedChartAPITests(unittest.TestCase):
     def extended_outputs(self):
         outputs=self.outputs();value=make_extended(group(),'000001.SZ','20260904',REVISION)
         legacy=[{k:b[k] for k in ['date','open','high','low','close','ma10','ma20','ma60','volume']} for b in value['bars'][-120:]]
-        for strategy in ['leaders','pullback','golden_pit','left_rebound']:
+        for strategy in ['leaders','pullback','golden_pit','left_rebound','orderflow']:
             folder=outputs/strategy/'20260905T120000-abcdef'
             (folder/'charts/000001.SZ.json').write_text(json.dumps(legacy))
             write_extended(folder/'charts-extended/000001.SZ.json.gz',value)

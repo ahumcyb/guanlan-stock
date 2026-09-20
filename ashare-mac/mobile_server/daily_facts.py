@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from engine.close_proof import valid_date, verify_package_close, ZONE
 from engine.snapshot_protocol import REVISION
-from .artifacts import STRATEGIES, HISTORICAL_STRATEGIES, GENERATION, MAX_REPORT, checked_file
+from .artifacts import published_strategies,STRATEGIES, HISTORICAL_STRATEGIES, GENERATION, MAX_REPORT, checked_file
 
 
 def evidence_hash(value):
@@ -47,7 +47,7 @@ def collect_evidence(root, market_current, date, now):
     reviews={}
     quotes=frames['daily'].set_index('ts_code')
     daily_codes=set(frames['daily'].ts_code);universe=None;strategies=[];breadth=None;metadata_warning=False
-    ids=STRATEGIES if (research/'left_rebound/manifest.json').exists() else HISTORICAL_STRATEGIES
+    ids=published_strategies(research)
     for strategy in ids:
         folder=research/strategy
         manifest=json.loads(checked_file(research,folder/'manifest.json',65536).read_text())
@@ -94,6 +94,8 @@ def collect_evidence(root, market_current, date, now):
             threshold,report.get('breadth',0)) for stock in stocks if stock['ts_code'] in prior_codes.get(strategy,set())}
         strategies.append(dict(id=strategy,name=short_text(report.get('strategy_name'),40),
             shortlist_count=len(picks),confirmed_count=report['confirmed_count'],watching_count=report['watching_count'],picks=picks,
+            data_status=(report.get('orderflow_status') or {}).get('status','complete'),
+            data_message=(report.get('orderflow_status') or {}).get('message',''),
             market_filter_applies=threshold is not None,market_filter_threshold=threshold,
             market_filter_passed=(report.get('breadth',0)>=threshold) if threshold is not None else None))
         if strategy=='leaders':breadth=report.get('breadth')

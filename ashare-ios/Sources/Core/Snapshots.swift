@@ -53,7 +53,7 @@ struct MarketStatus:Codable {
 struct PublishedBundle:Codable {
     let schemaVersion:Int;let manifests:[String:MobileManifest]
     func validate() throws {
-        guard schemaVersion==1,Set(manifests.keys)==Set(AfterCloseStrategies.ids) else { throw MobileFailure.invalidData }
+        guard schemaVersion==1,AfterCloseStrategies.validGroup(Array(manifests.keys)) else { throw MobileFailure.invalidData }
         for (id,manifest) in manifests { try manifest.validate();guard manifest.strategy==id else { throw MobileFailure.invalidData } }
         guard Set(manifests.values.map(\.generation)).count==1,Set(manifests.values.map(\.dataRevision)).count==1,
               Set(manifests.values.map(\.asOf)).count==1 else { throw MobileFailure.invalidData }
@@ -70,7 +70,7 @@ final class OfflineCache {
         let bundleFile=root.appendingPathComponent("bundle-current.json")
         if AfterCloseStrategies.ids.contains(strategy),FileManager.default.fileExists(atPath:bundleFile.path) {
             let bundle=try mobileDecoder().decode(PublishedBundle.self,from:Data(contentsOf:bundleFile));try bundle.validate()
-            let manifest=bundle.manifests[strategy]!
+            guard let manifest=bundle.manifests[strategy] else { return nil }
             return try CachedSnapshot(manifest:manifest,report:manifest.decodeReport(Data(contentsOf:reportURL(manifest))))
         }
         let pointer=root.appendingPathComponent(strategy+"-current.json")
@@ -100,7 +100,7 @@ final class OfflineCache {
         let bundle=PublishedBundle(schemaVersion:1,manifests:manifests);try bundle.validate()
         guard Set(reports.keys)==Set(manifests.keys) else { throw MobileFailure.invalidData }
         var universe:Set<String>?
-        for id in AfterCloseStrategies.ids {
+        for id in manifests.keys.sorted() {
             let report=try manifests[id]!.decodeReport(reports[id]!)
             let codes=Set(report.stocks.map(\.id))
             if let universe,universe != codes { throw MobileFailure.invalidData };universe=codes
@@ -111,7 +111,7 @@ final class OfflineCache {
             previousFiles=Set(previous.manifests.values.map{reportURL($0).lastPathComponent})
         }
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
-        for id in AfterCloseStrategies.ids { try reports[id]!.write(to:reportURL(manifests[id]!),options:.atomic) }
+        for id in manifests.keys.sorted() { try reports[id]!.write(to:reportURL(manifests[id]!),options:.atomic) }
         let encoder=JSONEncoder();encoder.keyEncodingStrategy = .convertToSnakeCase
         try encoder.encode(bundle).write(to:bundleFile,options:.atomic)
         for (id,manifest) in manifests { try encoder.encode(manifest).write(to:root.appendingPathComponent(id+"-current.json"),options:.atomic) }
@@ -203,7 +203,7 @@ func latestChartDataset(code:String,through:String?,cache:OfflineCache,api:Mobil
 func synchronizePublishedBundle(_ api:MobileAPI,cache:OfflineCache,manifests:[String:MobileManifest]) async throws {
     try PublishedBundle(schemaVersion:1,manifests:manifests).validate()
     var reports:[String:Data]=[:];var changed=false
-    for id in AfterCloseStrategies.ids {
+    for id in manifests.keys.sorted() {
         let manifest=manifests[id]!
         if let data=try cache.cachedData(manifest) { reports[id]=data }
         else {

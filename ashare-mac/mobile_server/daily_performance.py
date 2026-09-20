@@ -37,6 +37,7 @@ def validate_selections(snapshot):
         picks=group.get('picks')
         if (not isinstance(picks,list) or len(picks)>10 or not isinstance(group.get('name'),str)
                 or len(group['name'])>80):raise ValueError('精选快照数量或名称无效')
+        if group.get('data_status','complete') not in ['complete','incomplete'] or (group.get('data_status')=='incomplete' and picks):raise ValueError('未完成策略不能携带精选')
         codes=set()
         for row in picks:
             if not isinstance(row,dict):raise ValueError('精选快照股票无效')
@@ -77,7 +78,7 @@ def evaluate_selections(snapshot,previous_daily,current_daily,previous_factors,c
                 previous_adj_factor=a0,current_adj_factor=a1))
         total=len(rows);settled=len(returns)
         groups.append(dict(id=group['id'],name=group['name'],selected_count=total,settled_count=settled,
-            status='no_picks' if not total else ('complete' if settled==total else 'partial'),
+            status='unavailable' if group.get('data_status')=='incomplete' else ('no_picks' if not total else ('complete' if settled==total else 'partial')),
             up_count=sum(value>1e-8 for value in returns),down_count=sum(value < -1e-8 for value in returns),
             flat_count=sum(abs(value)<=1e-8 for value in returns),
             mean_return_pct=sum(returns)/total if total and settled==total else None,rows=rows))

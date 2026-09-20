@@ -2,10 +2,10 @@
 import numpy as np
 import pandas as pd
 
-VERSION = 'shortline-1.4.0'
-STRATEGIES = {'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑',
+VERSION = 'shortline-1.5.0'
+STRATEGIES = {'orderflow':'大单承接', 'leaders':'流动性趋势', 'pullback':'缩量回踩转强', 'golden_pit':'黄金坑',
               'left_rebound':'左侧低吸', 'momentum_60':'60 日风险调整动量'}
-MARKET_THRESHOLDS={'leaders':.4,'pullback':.4,'golden_pit':.4,'left_rebound':.2,'momentum_60':None}
+MARKET_THRESHOLDS={'orderflow':.4,'leaders':.4,'pullback':.4,'golden_pit':.4,'left_rebound':.2,'momentum_60':None}
 
 
 def features(bars: pd.DataFrame, market_dates=None) -> pd.DataFrame:

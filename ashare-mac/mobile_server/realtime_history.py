@@ -37,6 +37,9 @@ def summary(report):
     result={**{k:report[k] for k in ['slot','date','generated_at','kind','status','message','executor']},
             'run_state':run_state(report),
             'strategy_counts':{k:len(report['strategies'].get(k,[])) for k in ['overnight','golden']}}
+    if report.get('orderflow') is not None:
+        result['orderflow_status']=report['orderflow']['status']
+        result['strategy_counts']['orderflow']=len(report['orderflow']['candidates'])
     if report.get('bottom_volume') is not None:
         result['bottom_status']=report['bottom_volume']['status']
         result['strategy_counts']['bottom_volume']=len(report['bottom_volume']['candidates'])

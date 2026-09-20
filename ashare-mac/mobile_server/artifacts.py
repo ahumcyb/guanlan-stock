@@ -7,13 +7,18 @@ import time
 from pathlib import Path
 from engine.snapshot_protocol import REVISION
 
-STRATEGIES=('leaders','pullback','golden_pit','left_rebound')
+PREVIOUS_STRATEGIES=('leaders','pullback','golden_pit','left_rebound')
+STRATEGIES=(*PREVIOUS_STRATEGIES,'orderflow')
 HISTORICAL_STRATEGIES=('leaders','pullback','golden_pit','momentum_60')
 SUPPORTED_STRATEGIES=(*STRATEGIES,'momentum_60')
 
 
 def valid_strategy_group(ids):
-    return len(ids)==4 and set(ids) in (set(STRATEGIES),set(HISTORICAL_STRATEGIES))
+    return len(ids)==len(set(ids)) and set(ids) in (set(STRATEGIES),set(PREVIOUS_STRATEGIES),set(HISTORICAL_STRATEGIES))
+
+def published_strategies(folder):
+    if (folder/'orderflow/manifest.json').exists():return STRATEGIES
+    return PREVIOUS_STRATEGIES if (folder/'left_rebound/manifest.json').exists() else HISTORICAL_STRATEGIES
 GENERATION=re.compile(r'^\d{8}T\d{6}-[a-f0-9]{6}$')
 CODE=re.compile(r'^\d{6}\.(SH|SZ|BJ)$')
 MAX_REPORT=12*1024*1024
