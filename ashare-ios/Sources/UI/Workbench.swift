@@ -51,7 +51,7 @@ struct Workbench:View {
                                         ForEach(AfterCloseStrategies.ids,id:\.self) { Text(AfterCloseStrategies.shortName($0)).tag($0) }
                                     }.pickerStyle(.segmented).disabled(store.busy)
                                     HStack(alignment:.top) {
-                                        Metric(label:"最新候选",value:"\(report.shortlistCount) 只")
+                                        Metric(label:"最新候选",value:report.orderflowIncomplete ? "未完成":"\(report.shortlistCount) 只")
                                         let result=store.daily?.latest?.evidence.performance?.strategies.first(where:{$0.id==store.strategy})
                                         Metric(label:"最近精选结算",value:result?.meanReturnPct.map(dailyChange) ?? "—")
                                         VStack(alignment:.leading,spacing:4) {
@@ -59,6 +59,7 @@ struct Workbench:View {
                                             if store.realtime?.settings.enabled != false { Text(String(dailyTime(store.status?.marketStatus?.nextScreenAt).prefix(5))).font(.caption2).foregroundStyle(.secondary) }
                                         }
                                     }
+                                    if let status=report.orderflowStatus { Text(status.message).font(.caption).foregroundStyle(report.orderflowIncomplete ? MobileTheme.amber:MobileTheme.teal) }
                                     Text(store.status?.marketStatus?.label(report.asOf) ?? "日线截至 \(dateText(report.asOf)) · 完整日期待核验").font(.caption).foregroundStyle(.secondary)
                                     if let date=store.daily?.latest?.evidence.performance?.evaluationDate { Text("精选观察结算截至 \(dateText(date))，未计费用及成交约束。").font(.caption2).foregroundStyle(.secondary) }
                                     DisclosureGroup("股票池与规则概况") {
@@ -106,7 +107,7 @@ struct Workbench:View {
                                 NavigationLink { MobileStockDetail(stock:stock,manifest:manifest) } label: { StockRow(stock:stock) }
                                     .swipeActions { Button { store.toggleFavorite(stock) } label: { Label(store.favorites.contains(stock.id) ? "移出观察":"加入观察",systemImage:"star") }.tint(MobileTheme.teal) }
                             }
-                            if stocks.isEmpty { EmptyMessage(title:favoritesOnly ? "建立你的观察列表":"没有符合条件的股票",text:favoritesOnly ? "在股票详情点星标，或向左轻扫股票加入观察。":"可以切换筛选条件或搜索名称、代码和行业。",icon:"magnifyingglass").listRowSeparator(.hidden) }
+                            if stocks.isEmpty { EmptyMessage(title:favoritesOnly ? "建立你的观察列表":(store.report?.orderflowIncomplete==true ? "大单数据未完成":"没有符合条件的股票"),text:favoritesOnly ? "在股票详情点星标，或向左轻扫股票加入观察。":"可以切换筛选条件或搜索名称、代码和行业。",icon:"magnifyingglass").listRowSeparator(.hidden) }
                         } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? store.favoritesMessage:(!query.isEmpty ? "搜索范围：全部股票":"每行业最多 2 只精选")) } }
                         Section { Text("研究规则尚未证明稳定优势；匹配分不代表胜率。").font(.caption).foregroundStyle(.secondary) }.listRowSeparator(.hidden)
                     }.listStyle(.plain).refreshable { await store.synchronize() }

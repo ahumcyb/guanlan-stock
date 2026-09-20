@@ -9,6 +9,7 @@ struct ResearchView:View {
             VStack(alignment:.leading,spacing:22) {
                 pageTitle("历史检验",subtitle:"\(store.report?.strategyName ?? "") · 固定规则的信号事件研究。")
                 if let report=store.report {
+                    if report.isOrderflow { Panel { Text("大单同源历史样本尚未齐备，暂不展示历史胜率；从真实发布的精选记录观察后续表现。").font(.system(size:13)).foregroundStyle(Palette.amber) } }
                     if let h=report.backtest.horizons.first(where:{$0.horizon==3}) {
                         Panel {
                             VStack(alignment:.leading,spacing:12) {

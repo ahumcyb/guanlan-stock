@@ -1,7 +1,7 @@
 """14:30 dated large-flow observation, independent of the closing replay rule."""
 import time
 from concurrent.futures import ThreadPoolExecutor,as_completed
-from .datta import DattaClient,DattaError
+from .datta import DattaClient,DattaError,DattaUnavailable
 from .intraday import local_now,finite,MAX_AGE
 from .orderflow import decode_flow,flow_pass
 
@@ -35,12 +35,19 @@ def flow_pool(features,quotes,previous,wide=False):
 def run_flow(features,quotes,dates,previous,client=None,clock=local_now,budget=45):
     now=clock();codes=flow_pool(features,quotes,previous);by_code={q['ts_code']:q for q in quotes}
     client=client or DattaClient(workers=4);evidence={};failed=[];started=time.monotonic()
-    def fetch(code):
+    def fetch_once(code):
         q=by_code[code];bar=dict(q,trade_date=now.strftime('%Y%m%d'),amount=q['amount']/1000,vol=q['vol']/100)
         params=dict(symbol=code[:6],market=code[-2:].lower())
         history=client.transport('/d6/market/v1/capital/flow/history',dict(params,limit=10))
         raw=client.transport('/d6/market/v1/capital/flow/snapshot',params)
         return decode_flow(raw,history,bar,dates,now=clock())
+    def fetch(code):
+        # One retry on the same fenced provider; never retry lost ownership.
+        for attempt in range(2):
+            try:return fetch_once(code)
+            except DattaUnavailable:raise
+            except Exception:
+                if attempt:raise
     with ThreadPoolExecutor(max_workers=4) as pool:
         for offset in range(0,len(codes),4):
             if time.monotonic()-started>budget:failed.extend(codes[offset:]);break

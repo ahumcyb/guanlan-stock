@@ -110,7 +110,7 @@ struct RealtimeView: View {
                 if let report=selectedSlot.isEmpty ? store.state?.lastFlow : displayed,let flow=report.orderflow {
                     GroupBox("14:30 · 大单承接") {
                         VStack(alignment:.leading,spacing:8) {
-                            Text(dateText(report.date)+" · "+flow.message)
+                            Text(dateText(report.date)+" · "+flow.message+(flow.complete ? " 命中\(flow.matchedCount)只，展示\(flow.candidates.count)只。":""))
                             ForEach(flow.candidates) { row in
                                 ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,focus:nil,through:nil)) { Text(row.name+" · "+String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
                             }

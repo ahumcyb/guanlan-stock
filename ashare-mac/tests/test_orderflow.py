@@ -165,3 +165,27 @@ class MinuteReplayTests(unittest.TestCase):
         self.assertAlmostEqual(decode_replay(p,bar())['flow_late_volume'],.2)
         p['segments'][0]['data'][-1]['time']=153000
         with self.assertRaises(DattaError):decode_replay(p,bar())
+
+class SameSourceRetryTests(unittest.TestCase):
+    def test_transient_http_failure_retries_once_and_recovers(self):
+        from engine.orderflow_intraday import run_flow
+        from http.client import IncompleteRead
+        now,f,q=RealtimeFlowTests().inputs()
+        class Client:
+            calls=0
+            def transport(self,path,params):
+                self.calls+=1
+                if self.calls==1:raise IncompleteRead(b'partial')
+                if path.endswith('history'):return history()
+                p=flow();p['data']['minTime']=now.timestamp()*1000;return p
+        client=Client();r=run_flow(f,q,['20260916','20260917',DAY],'20260917',client,lambda:now)
+        self.assertEqual(r['status'],'ready');self.assertEqual(client.calls,3)
+    def test_lost_source_ownership_is_not_retried(self):
+        from engine.orderflow_intraday import run_flow
+        from engine.datta import DattaUnavailable
+        now,f,q=RealtimeFlowTests().inputs()
+        class Client:
+            calls=0
+            def transport(self,*args):self.calls+=1;raise DattaUnavailable('lost source lease')
+        client=Client();r=run_flow(f,q,['20260916','20260917',DAY],'20260917',client,lambda:now)
+        self.assertEqual(r['status'],'blocked');self.assertEqual(client.calls,1)

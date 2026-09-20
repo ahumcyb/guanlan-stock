@@ -99,6 +99,7 @@ struct Report: Decodable {
     let dataRevision:String?
     let orderflowStatus:OrderflowStatus?
     var isOrderflow:Bool { strategyId=="orderflow" }
+    var orderflowIncomplete:Bool { isOrderflow && orderflowStatus?.status != "complete" }
     var isLeaders:Bool { strategyId=="leaders" }
     var isGoldenPit:Bool { strategyId=="golden_pit" }
     var isMomentum60:Bool { strategyId=="momentum_60" }

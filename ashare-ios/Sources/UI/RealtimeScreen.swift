@@ -55,7 +55,7 @@ struct RealtimeScreen: View {
                 }
                 Section("14:30 · 大单承接") {
                     if let report=store.realtime?.lastFlow,let flow=report.orderflow {
-                        Text(dateText(report.date)+" · "+flow.message).font(.subheadline)
+                        Text(dateText(report.date)+" · "+flow.message+(flow.complete ? " 命中\(flow.matchedCount)只，展示\(flow.candidates.count)只。":"")).font(.subheadline)
                         ForEach(flow.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: {
                             HStack { Text(row.name);Spacer();Text(String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
                         } }

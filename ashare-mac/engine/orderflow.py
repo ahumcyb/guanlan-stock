@@ -4,7 +4,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
-from .datta import DattaClient, DattaError, number, source_time
+from .datta import DattaClient, DattaError, DattaUnavailable, number, source_time
 
 RULE_VERSION=1
 POOL_LIMIT=200
@@ -149,7 +149,7 @@ def apply_evidence(x,date,codes,evidence,complete):
 def collect_daily(x,date,dates,client=None):
     client=client or DattaClient(workers=4);codes=prescreen(x,date)
     bars=x[x.trade_date.eq(date)].set_index('ts_code').to_dict('index');evidence={};failures={};start=time.monotonic()
-    def fetch(code):
+    def fetch_once(code):
         bar=dict(bars[code],ts_code=code);params=dict(symbol=code[:6],market=code[-2:].lower())
         raw=client.transport('/d6/market/v1/capital/flow/snapshot',params)
         history=client.transport('/d6/market/v1/capital/flow/history',dict(params,limit=10))
@@ -162,6 +162,13 @@ def collect_daily(x,date,dates,client=None):
                 e.update(decode_minutes(client.history(code,'MIN1',date,date),bar))
         e['evidence_sha256']=hashlib.sha256(json.dumps([raw,history,e],sort_keys=True).encode()).hexdigest()
         return e
+    def fetch(code):
+        # One retry on the same fenced provider; never retry lost ownership.
+        for attempt in range(2):
+            try:return fetch_once(code)
+            except DattaUnavailable:raise
+            except Exception:
+                if attempt:raise
     # Bounded batches avoid filling an executor with hundreds of unstarted requests.
     with ThreadPoolExecutor(max_workers=4) as pool:
         for offset in range(0,len(codes),4):

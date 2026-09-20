@@ -72,13 +72,14 @@ struct WorkspaceView:View {
             if let report=store.report {
                 if !favoritesOnly {
                     HStack(spacing:16) {
-                        Metric(label:"最新候选",value:"\(report.shortlistCount) 只",note:dateText(report.asOf))
+                        Metric(label:"最新候选",value:report.orderflowIncomplete ? "未完成":"\(report.shortlistCount) 只",note:dateText(report.asOf))
                         let performance=store.dailyState?.latest?.evidence.performance
                         let result=performance?.strategies.first(where:{$0.id==store.strategy})
                         Metric(label:"最近精选观察",value:result?.meanReturnPct.map(dailyChange) ?? "—",note:performance.map{dateText($0.evaluationDate)+" · 未计成本"} ?? "等待核验")
                         Metric(label:"下次尾盘检查",value:store.realtimeState?.settings.enabled==false ? "已暂停":(dailyTime(store.serverStatus?.marketStatus?.nextScreenAt).components(separatedBy:" ").last ?? "—"),note:store.realtimeState?.settings.enabled==false ? "可在实时提醒开启":String(dailyTime(store.serverStatus?.marketStatus?.nextScreenAt).prefix(5))+" · Mac 优先")
                     }
                 } else { Text(store.favoritesMessage).font(.system(size:11)).foregroundStyle(Palette.muted) }
+                if let status=report.orderflowStatus { Text(status.message).font(.system(size:11)).foregroundStyle(report.orderflowIncomplete ? Palette.amber:Palette.teal) }
                 DisclosureGroup("股票池与规则概况",isExpanded:$showStatistics) {
                 HStack(spacing:15) {
                     Metric(label:"有效股票池",value:report.eligibleCount.formatted(),note:"\(report.universeCount.formatted()) 只当日行情")
@@ -147,7 +148,7 @@ struct WorkspaceView:View {
                 .background(Palette.line.opacity(0.25))
             if filtered.isEmpty {
                 EmptyViewMessage(icon:favoritesOnly ? "star":"line.3.horizontal.decrease.circle",
-                    title:favoritesOnly ? "还没有观察中的股票":"暂无匹配股票",
+                    title:favoritesOnly ? "还没有观察中的股票":(store.report?.orderflowIncomplete==true ? "大单数据未完成":"暂无匹配股票"),
                     message:favoritesOnly ? "在股票详情点星标，加入观察列表。":"可以切换筛选条件或搜索股票。市场走弱时，策略也会主动留空。")
             } else {
                 ScrollViewReader { proxy in

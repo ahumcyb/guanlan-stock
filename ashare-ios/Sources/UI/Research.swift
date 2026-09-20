@@ -8,25 +8,27 @@ struct MobileResearch:View {
             ScrollView {
                 VStack(alignment:.leading,spacing:16) {
                     if let report=store.report {
-                        ResearchCard { VStack(alignment:.leading,spacing:12) { Text(report.strategyName ?? "短线研究").font(.title3.weight(.semibold));Text("\(dateText(report.backtest.start)) — \(dateText(report.backtest.end))").font(.caption).foregroundStyle(.secondary);Text("次日开盘进入，往返成本 0.30%。多个信号可能重叠，以下为单次事件统计。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4) } }
+                        ResearchCard { VStack(alignment:.leading,spacing:12) { Text(report.strategyName ?? "短线研究").font(.title3.weight(.semibold));Text(report.isOrderflow ? "尚无完整同源历史样本":"\(dateText(report.backtest.start)) — \(dateText(report.backtest.end))").font(.caption).foregroundStyle(.secondary);Text(report.isOrderflow ? "从真实发布的精选记录观察后续表现，暂不展示历史胜率。":"次日开盘进入，往返成本 0.30%。多个信号可能重叠，以下为单次事件统计。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4) } }
                         if report.isMomentum60 {
                             ResearchCard { Text(Momentum60Guide.evidence + " 下列动态指标是另一口径的事后事件观察。").font(.subheadline).foregroundStyle(MobileTheme.amber).lineSpacing(4) }
                         }
-                        Picker("持有期",selection:$horizon) { ForEach([1,3,5],id:\.self) { Text("持有 \($0) 日").tag($0) } }.pickerStyle(.segmented)
+                        if !report.isOrderflow { Picker("持有期",selection:$horizon) { ForEach([1,3,5],id:\.self) { Text("持有 \($0) 日").tag($0) } }.pickerStyle(.segmented) }
                         if let result=report.backtest.horizons.first(where:{$0.horizon==horizon}) {
                             ResearchCard { VStack(alignment:.leading,spacing:18) { HStack { Metric(label:"平均单次净收益",value:percent(result.mean,signed:true),color:MobileTheme.change(result.mean ?? 0));Metric(label:"获利事件占比",value:percent(result.winRate)) };HStack { Metric(label:"可结算事件",value:"\(result.count) / \(result.total)");Metric(label:"成本提高至 0.60%",value:percent(result.stressMean,signed:true),color:MobileTheme.change(result.stressMean ?? 0)) };Divider();HStack { Text("简单流动性参照").font(.subheadline);Spacer();Text(percent(result.benchmark.mean,signed:true)).font(.headline.monospacedDigit()).foregroundStyle(MobileTheme.change(result.benchmark.mean ?? 0)) };Text(report.backtest.benchmarkLabel).font(.caption).foregroundStyle(.secondary) } }
                             ResearchCard { VStack(alignment:.leading,spacing:12) { Text("样本审计").font(.headline);ForEach(result.statuses.keys.sorted(),id:\.self) { key in HStack { Text(statusName(key));Spacer();Text(String(result.statuses[key] ?? 0)).monospacedDigit() }.font(.subheadline) } } }
                         }
                         ResearchCard {
                             VStack(alignment:.leading,spacing:14) {
-                                Text("分月结果 · 持有 3 日").font(.headline)
+                                Text(report.isOrderflow ? "从发布日起积累观察记录":"分月结果 · 持有 3 日").font(.headline)
                                 ForEach(report.backtest.monthly) { month in HStack { Text(month.displayMonth).font(.subheadline.monospaced());Spacer();Text(month.sampleLabel).font(.caption).foregroundStyle(.secondary);Text(percent(month.mean,signed:true)).font(.subheadline.monospacedDigit()).foregroundStyle(MobileTheme.change(month.mean ?? 0)).frame(width:86,alignment:.trailing) } }
                             }
                         }
                         ResearchCard {
                             VStack(alignment:.leading,spacing:12) {
                                 Text("策略和验证边界").font(.headline)
-                                if report.isMomentum60 {
+                                if report.isOrderflow {
+                                    Text(OrderflowGuide.summary).font(.subheadline).foregroundStyle(.secondary)
+                                } else if report.isMomentum60 {
                                     Text(Momentum60Guide.summary).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                                 } else if report.isLeft {
                                     Text(LeftReboundGuide.summary).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
