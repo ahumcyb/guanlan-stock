@@ -115,6 +115,9 @@ class Service:
                     if not isinstance(value,dict):raise ValueError()
                     if realtime_phone and action==['settings']:
                         return 200,self.realtime.configure(value)
+                    if realtime_phone and action==['jev'] and set(value)=={'slot'}:
+                        from .jev import request_review
+                        return 202,request_review(self.realtime,value['slot'])
                     if realtime_phone and action==['scan'] and not value:return 202,self.realtime.request_scan()
                     if realtime_phone and action==['test'] and not value:return 202,self.realtime.test_notification()
                     if realtime_worker:

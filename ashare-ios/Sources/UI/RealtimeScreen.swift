@@ -43,6 +43,13 @@ struct RealtimeScreen: View {
                         }
                     }
                 }
+                Section("JEV · 买入判断") {
+                    if let snapshot=store.realtime?.jevSnapshot {
+                        if let review=snapshot.jev { JevReviewView(review:review) }
+                        else { Text("启用后会自动分析实时候选；也可从历史轮次发起回看。").font(.caption) }
+                        Button("分析本轮快照") { Task { await store.realtimeAction("jev",values:["slot":snapshot.slot]) } }.disabled(store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
+                    } else { Text("等待筛选轮次；历史分析可在原始结果中查看。").font(.caption) }
+                }
                 Section("历史轮次") {
                     DisclosureGroup("查看初筛、复核与最终结果") {
                         ForEach(store.realtimeHistory) { run in
@@ -159,6 +166,10 @@ struct RealtimeHistoryDetail:View {
                         LabeledContent("完成时间",value:realtimeDate(report.generatedAt))
                         Text(report.message)
                     }
+                    Section("JEV · 买入判断") {
+                        if let review=report.jev { JevReviewView(review:review) }
+                        Button("分析本轮快照") { Task { await store.realtimeAction("jev",values:["slot":report.slot]);await store.openRealtimeRun(report.slot) } }.disabled(!report.hasJevCandidates || store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
+                    }
                     ForEach(report.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
                     if report.complete {
                         ForEach(["overnight","golden"],id:\.self) { strategy in
@@ -256,6 +267,7 @@ struct RealtimeCandidateDetail: View {
                 LabeledContent("历史 / 股本参考日", value: dateText(candidate.referenceDate))
             }
             Section("已通过条件") { ForEach(candidate.checks, id: \.self) { Label($0, systemImage: "checkmark.circle").foregroundStyle(MobileTheme.teal) } }
+            if let review=candidate.jev { Section("JEV · 买入判断") { JevStockView(review:review) } }
             Section("仍需核验") { ForEach(candidate.pending, id: \.self) { Label($0, systemImage: "exclamationmark.circle").foregroundStyle(MobileTheme.amber) } }
             Section { Text("这是规则匹配的研究候选。隔夜跳空或跌停可能无法按参考止损退出。软件不执行交易，也没有验证原文宣传的胜率。").font(.footnote).foregroundStyle(.secondary) }
         }.navigationTitle(candidate.name).navigationBarTitleDisplayMode(.inline)
@@ -271,6 +283,8 @@ struct RealtimeSettingsScreen: View {
     @State private var model = "deepseek-v4-flash"
     @State private var bark = ""
     @State private var key = ""
+    @State private var jevKey=""
+    @State private var jevEnabled=false
     @State private var saved = ""
     var body: some View {
         NavigationStack {
@@ -286,6 +300,11 @@ struct RealtimeSettingsScreen: View {
                     Button("发送测试通知") { Task { await store.realtimeAction("test");saved = store.realtimeMessage } }
                         .disabled(store.realtime?.settings.barkConfigured != true || store.realtimeBusy)
                 }
+                Section("JEV · 买入判断") {
+                    Toggle("分析实时候选",isOn:$jevEnabled)
+                    SecureField(store.realtime?.settings.jevConfigured==true ? "JEV已配置 · 输入新Key替换":"TypeSafe JEV API Key",text:$jevKey).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Text("向TypeSafe发送本轮候选的公开量价与触发条件，可能产生接口费用。提供可考虑买入、观望或暂不买的分类；置信度不是盈利概率。").font(.caption).foregroundStyle(.secondary)
+                }
                 Section("DeepSeek（可选）") {
                     Toggle("附加 AI 研究解读", isOn: $ai)
                     Picker("模型", selection: $model) { Text("V4 Flash").tag("deepseek-v4-flash");Text("V4 Pro").tag("deepseek-v4-pro") }
@@ -296,16 +315,18 @@ struct RealtimeSettingsScreen: View {
                     Button("保存设置") {
                         Task {
                             var values: [String: Any] = ["enabled": enabled, "notification_enabled": notifications, "ai_enabled": ai, "model": model]
+                            values["jev_enabled"]=jevEnabled
+                            if !jevKey.isEmpty { values["jev_key"]=jevKey.trimmingCharacters(in:.whitespacesAndNewlines) }
                             if !bark.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { values["bark_url"] = bark.trimmingCharacters(in: .whitespacesAndNewlines) }
                             if !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { values["deepseek_key"] = key.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            await store.realtimeAction("settings", values: values);bark = "";key = "";saved = store.realtimeMessage
+                            await store.realtimeAction("settings", values: values);bark = "";key = "";jevKey="";saved = store.realtimeMessage
                         }
                     }.disabled(store.realtimeBusy || !store.connected)
                     if !saved.isEmpty { Text(saved).font(.caption).foregroundStyle(.secondary) }
                 }
             }.navigationTitle("实时提醒设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-                .onAppear { if let s = store.realtime?.settings { enabled = s.enabled;notifications = s.notificationEnabled;ai = s.aiEnabled;model = s.model } }
+                .onAppear { if let s = store.realtime?.settings { enabled = s.enabled;notifications = s.notificationEnabled;ai = s.aiEnabled;model = s.model;jevEnabled=s.jevEnabled ?? false } }
         }
     }
 }

@@ -33,10 +33,10 @@ import Foundation
                 guard value.event.id==id else { throw MobileFailure.invalidData }
                 guard value.report==nil || value.event.runId==value.report?.slot else { throw MobileFailure.invalidData }
                 try value.report?.validateArchive(value.event.runId);eventDetail=value;message=value.message
-            } else if ["settings","scan","test"].contains(action) {
+            } else if ["settings","scan","test","jev"].contains(action) {
                 let body=try JSONSerialization.data(withJSONObject:values)
                 _=try await api.request("/v1/realtime/"+action,method:"POST",body:body,limit:65536)
-                message=action=="settings" ? "设置已保存":(action=="test" ? "测试通知已提交":"行情检查已提交，优先由 Mac 执行")
+                message=action=="jev" ? "JEV分析已提交，稍后查看本轮结果":(action=="settings" ? "设置已保存":(action=="test" ? "测试通知已提交":"行情检查已提交，优先由 Mac 执行"))
             } else { throw MobileFailure.invalidData }
         } catch { message="这次读取或操作未完成，已保留现有记录，请稍后重试。" }
     }
@@ -51,6 +51,8 @@ struct RealtimeView: View {
     @State private var model = "deepseek-v4-flash"
     @State private var bark = ""
     @State private var deepseek = ""
+    @State private var jevKey=""
+    @State private var jevEnabled=false
     @State private var showSettings = false
     @State private var selectedSlot=""
     @State private var showEvent=false
@@ -70,7 +72,7 @@ struct RealtimeView: View {
                     Spacer()
                     Button("检查行情") { Task { await store.request("scan", runtime: app.runtime) } }.disabled(store.busy)
                     Button("提醒设置") {
-                        if let s = store.state?.settings { enabled = s.enabled;notifications = s.notificationEnabled;ai = s.aiEnabled;model = s.model }
+                        if let s = store.state?.settings { enabled = s.enabled;notifications = s.notificationEnabled;ai = s.aiEnabled;model = s.model;jevEnabled=s.jevEnabled ?? false }
                         showSettings.toggle()
                     }
                 }
@@ -115,6 +117,15 @@ struct RealtimeView: View {
                                 ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,focus:nil,through:nil)) { Text(row.name+" · "+String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
                             }
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(12)
+                    }
+                }
+                if let report=selectedSlot.isEmpty ? store.state?.jevSnapshot : displayed,report.hasJevCandidates {
+                    GroupBox("JEV · 买入判断") {
+                        VStack(alignment:.leading,spacing:10) {
+                            if let review=report.jev { JevReviewView(review:review) }
+                            Button("分析本轮快照") { Task { await store.request("jev",runtime:app.runtime,values:["slot":report.slot]);await store.request("state",runtime:app.runtime) } }.disabled(store.state?.settings.jevEnabled != true || store.busy)
+                            Text("仅据本轮公开量价；不替代公告核查。过期判断仅供回看。").font(.caption)
+                        }.padding(8)
                     }
                 }
                 if let report = displayed {
@@ -205,6 +216,7 @@ struct RealtimeView: View {
                             Label("查看K线并定位提醒",systemImage:"chart.xyaxis.line").font(.caption).foregroundStyle(Palette.teal)
                         }
                         if let low=row.low60,let distance=row.distanceLow60 { Text("60日低价 \(decimal(low)) · 距低价 \(percent(distance)) · 放量 \(decimal(row.volumeMultiple)) 倍").font(.caption).foregroundStyle(Palette.teal) }
+                        if let review=row.jev { DisclosureGroup("JEV · "+review.label) { JevStockView(review:review) } }
                         DisclosureGroup("查看指标与核验条件") {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(String(format: "累计量 / 5日均量 %.2f倍 · 量比 %.2f · 均价 %.2f", row.volumeMultiple, row.volumeRatio, row.vwap))
@@ -237,14 +249,19 @@ struct RealtimeView: View {
                 SecureField(store.state?.settings.barkConfigured == true ? "Bark 已配置，输入新地址替换" : "Bark 首页 https://api.day.app/设备密钥", text: $bark)
                 HStack { Toggle("附加 DeepSeek 解读", isOn: $ai);Picker("模型", selection: $model) { Text("V4 Flash").tag("deepseek-v4-flash");Text("V4 Pro").tag("deepseek-v4-pro") }.frame(width: 220);Spacer() }
                 SecureField(store.state?.settings.deepseekConfigured == true ? "DeepSeek 已配置，输入新 Key 替换" : "DeepSeek API Key（可选）", text: $deepseek)
+                Toggle("JEV逐股买入判断",isOn:$jevEnabled)
+                SecureField(store.state?.settings.jevConfigured==true ? "JEV已配置，输入新Key替换":"TypeSafe JEV API Key",text:$jevKey)
+                Text("JEV接收本轮候选量价，可能产生接口费用；置信度不是盈利概率。").font(.caption)
                 Text("AI 只解释已筛选的公开量价与条件，可能产生 API 费用；不改变入选结果，也不代替公告核查。凭据通过配对 HTTPS 保存，不进入 Git。").font(.caption).foregroundStyle(Palette.muted)
                 HStack {
                     Button("保存设置") {
                         Task {
                             var values: [String: Any] = ["enabled": enabled, "notification_enabled": notifications, "ai_enabled": ai, "model": model]
+                            values["jev_enabled"]=jevEnabled
+                            if !jevKey.isEmpty { values["jev_key"]=jevKey.trimmingCharacters(in:.whitespacesAndNewlines) }
                             if !bark.isEmpty { values["bark_url"] = bark.trimmingCharacters(in: .whitespacesAndNewlines) }
                             if !deepseek.isEmpty { values["deepseek_key"] = deepseek.trimmingCharacters(in: .whitespacesAndNewlines) }
-                            await store.request("settings", runtime: app.runtime, values: values);bark = "";deepseek = ""
+                            await store.request("settings", runtime: app.runtime, values: values);bark = "";deepseek = "";jevKey=""
                         }
                     }.buttonStyle(.borderedProminent)
                     Button("发送测试通知") { Task { await store.request("test", runtime: app.runtime) } }

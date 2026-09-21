@@ -219,6 +219,12 @@ def main(args):
                 except Exception:
                     pass
         threading.Thread(target=service_pulse, daemon=True).start()
+        def jev_loop():
+            from .jev import process_one
+            while not stop.wait(2):
+                try:process_one(store)
+                except Exception:pass
+        threading.Thread(target=jev_loop,daemon=True).start()
         try:
             last_calendar = -21600  # Refresh on startup even just after the host boots.
             from .notifications import send_bark

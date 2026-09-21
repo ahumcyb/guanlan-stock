@@ -18,7 +18,7 @@ from .artifacts import atomic_json, checked_file
 from .realtime_history import RealtimeArchive,run_state
 
 DEFAULTS = dict(enabled=True, notification_enabled=True, ai_enabled=False, model='deepseek-v4-flash',
-                daily_enabled=False, daily_notification_enabled=True, daily_ai_enabled=True)
+                daily_enabled=False, daily_notification_enabled=True, daily_ai_enabled=True,jev_enabled=False)
 MODELS = {'deepseek-v4-flash', 'deepseek-v4-pro'}
 
 
@@ -194,21 +194,34 @@ class RealtimeStore:
     def settings(self):
         return dict(DEFAULTS, **self.read('settings.json', {}))
 
-    def configure(self, changes):
-        if not isinstance(changes, dict) or set(changes) - {'enabled', 'notification_enabled', 'ai_enabled', 'model', 'bark_url', 'deepseek_key', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled'}:
+    def configure(self,changes):
+        if isinstance(changes,dict) and set(changes)&{'jev_enabled','jev_key','clear_jev'}:
+            from .jev import dispatch_lock
+            with dispatch_lock(self.root):return self._configure(changes)
+        return self._configure(changes)
+
+    def _configure(self, changes):
+        if not isinstance(changes, dict) or set(changes) - {'enabled', 'notification_enabled', 'ai_enabled', 'model', 'bark_url', 'deepseek_key', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled','jev_enabled','jev_key','clear_jev'}:
             raise ValueError('设置字段无效')
         with self.lock():
             value = self.settings()
-            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled']:
+            previous_jev=(value.get('jev_enabled'),value.get('jev_key'))
+            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'clear_bark', 'clear_deepseek', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled','jev_enabled','clear_jev']:
                 if key in changes and type(changes[key]) is not bool:
                     raise ValueError('设置值无效')
-            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled']:
+            for key in ['enabled', 'notification_enabled', 'ai_enabled', 'daily_enabled', 'daily_notification_enabled', 'daily_ai_enabled','jev_enabled']:
                 if key in changes:
                     value[key] = changes[key]
             if 'model' in changes:
                 if changes['model'] not in MODELS:
                     raise ValueError('请选择支持的 DeepSeek 模型')
                 value['model'] = changes['model']
+            if changes.get('jev_key'):
+                key=changes['jev_key']
+                if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,256}',key):raise ValueError('JEV Key格式无效')
+                value['jev_key']=key
+            if changes.get('clear_jev'):
+                value.pop('jev_key',None);value['jev_enabled']=False
             if changes.get('bark_url'):
                 value['bark_key'] = bark_key(changes['bark_url'])
             if changes.get('deepseek_key'):
@@ -220,12 +233,25 @@ class RealtimeStore:
                 value.pop('bark_key', None)
             if changes.get('clear_deepseek'):
                 value.pop('deepseek_key', None);value['ai_enabled'] = False
+            if previous_jev!=(value.get('jev_enabled'),value.get('jev_key')) or changes.get('clear_jev'):
+                value['jev_generation']=secrets.token_hex(16)
             durable_json(self.root / 'settings.json', value)
+            if changes.get('clear_jev') or changes.get('jev_enabled') is False:
+                from .jev import read_queue,sidecar,save
+                from .realtime_history import valid_slot
+                candidates=set(read_queue(self))|{p.stem for p in sorted((self.root/'jev-reviews').glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:1100] if valid_slot(p.stem)}
+                for slot in candidates:
+                    try:
+                        path=sidecar(self.root,slot);pending=json.loads(checked_file(self.root,path,128*1024).read_text())
+                        if pending.get('status') in ['pending','running']:
+                            pending.update(status='cancelled',rows=[],message='JEV已停用，本次判断已取消。');save(path,pending)
+                    except (OSError,ValueError,TypeError):pass
+                save(self.root/'jev-queue.json',[])
         return self.public_settings()
 
     def public_settings(self):
         x = self.settings()
-        return {**{k: x[k] for k in DEFAULTS}, 'bark_configured': bool(x.get('bark_key')), 'deepseek_configured': bool(x.get('deepseek_key'))}
+        return {**{k: x[k] for k in DEFAULTS}, 'bark_configured': bool(x.get('bark_key')), 'deepseek_configured': bool(x.get('deepseek_key')), 'jev_configured':bool(x.get('jev_key'))}
 
     def state(self):
         return self.read('state.json', {'events': [], 'runs': [], 'done': []})
@@ -271,17 +297,23 @@ class RealtimeStore:
                     if need_screen:last_screen=record
                     if need_bottom:last_bottom=record
                 if last_screen is not None and last_bottom is not None:break
+        from .jev import attach
+        last_screen=attach(self.root,last_screen);last_bottom=attach(self.root,last_bottom);last_flow=attach(self.root,last_flow)
         return dict(schema_version=1, settings=self.public_settings(),
             mac_online=0 <= now - nodes.get('mac_heartbeat', 0) < 45,
             server_online=0 <= now - nodes.get('server_heartbeat', 0) < 45,
             running=lease.get('expires_at', 0) > now, executor=lease.get('executor', ''),
             schedule=['14:30 初筛', '14:45 复核', '14:50 提醒'],
-            events=list(reversed(state['events'][-30:])), latest=dict(state['runs'][-1],run_state=run_state(state['runs'][-1])) if state['runs'] else None,
+            events=list(reversed(state['events'][-30:])), latest=attach(self.root,dict(state['runs'][-1],run_state=run_state(state['runs'][-1]))) if state['runs'] else None,
             last_screen=last_screen,last_bottom=last_bottom,last_flow=last_flow)
 
     def history(self):return RealtimeArchive(self.root).history()
-    def run(self,slot):return RealtimeArchive(self.root).run(slot)
-    def event_detail(self,identity):return RealtimeArchive(self.root).event_detail(identity)
+    def run(self,slot):
+        from .jev import attach
+        return attach(self.root,RealtimeArchive(self.root).run(slot))
+    def event_detail(self,identity):
+        from .jev import attach
+        value=RealtimeArchive(self.root).event_detail(identity);value['report']=attach(self.root,value.get('report'),value['event'].get('jev_request_id'));return value
 
     def previous_candidates(self, date):
         days = [d for d in self.calendar() if d < date]
@@ -394,13 +426,16 @@ class RealtimeStore:
             self.save(state)
             return True
 
-    def event(self, state, title, body, kind, dedup, url=None,run_id=None):
+    def event(self, state, title, body, kind, dedup, url=None,run_id=None,expires_at=None,jev_request_id=None,jev_generation=None):
         if any(e.get('dedup') == dedup for e in state['events']):
             return
         event_id = str(uuid.uuid4())
         state['events'].append(dict(id=event_id, created_at=self.clock(), title=title, body=body, kind=kind,
             dedup=dedup, status='pending', attempts=0, url=url or 'guanlan://alerts/' + event_id))
         if run_id is not None:state['events'][-1]['run_id']=run_id
+        if expires_at is not None:state['events'][-1]['expires_at']=expires_at
+        if jev_request_id is not None:state['events'][-1]['jev_request_id']=jev_request_id
+        if jev_generation is not None:state['events'][-1]['jev_generation']=jev_generation
 
     def result_event(self, state, report):
         if report['status'] == 'closed' or report['kind'] == 'prepare':
@@ -458,9 +493,13 @@ class RealtimeStore:
                     changed = True
                 if event['status'] not in ['pending', 'retry'] or event.get('retry_at', 0) > now:
                     continue
+                if event.get('jev_request_id') and (not settings.get('jev_enabled') or event.get('jev_generation')!=settings.get('jev_generation')):
+                    event['status']='cancelled';changed=True;continue
                 notification_enabled=settings['daily_notification_enabled'] if event['kind']=='daily_review' else settings['notification_enabled']
                 if not notification_enabled or not settings.get('bark_key'):
                     event['status'] = 'unconfigured';changed = True;continue
+                if event.get('expires_at') is not None and (not valid_number(event['expires_at']) or now>=event['expires_at']):
+                    event['status']='expired';changed=True;continue
                 lifetime=21600 if event['kind']=='daily_review' else 180
                 if now - event['created_at'] > lifetime and event['kind'] != 'test':
                     event['status'] = 'expired';changed = True;continue

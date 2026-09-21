@@ -139,14 +139,14 @@ import Combine
         } catch { realtimeMessage="实时服务暂未连接；请下拉刷新，已有研究结果仍可使用。" }
     }
     func realtimeAction(_ action:String,values:[String:Any]=[:]) async {
-        guard let api,!realtimeBusy,["settings","test","scan"].contains(action) else { return }
+        guard let api,!realtimeBusy,["settings","test","scan","jev"].contains(action) else { return }
         realtimeBusy=true
         defer { realtimeBusy=false }
         do {
             let body=try JSONSerialization.data(withJSONObject:values)
             _=try await api.request("/v1/realtime/\(action)",method:"POST",body:body,limit:65536)
             await refreshRealtime()
-            realtimeMessage=action=="settings" ? "设置已保存" : (action=="test" ? "测试已提交，请查看 Bark 和提醒记录":"检查已提交，优先等待 Mac 执行")
+            realtimeMessage=action=="jev" ? "JEV分析已提交，结果将绑定本轮快照":(action=="settings" ? "设置已保存" : (action=="test" ? "测试已提交，请查看 Bark 和提醒记录":"检查已提交，优先等待 Mac 执行"))
         } catch { realtimeMessage=error.localizedDescription }
     }
     func openURL(_ url:URL) async {

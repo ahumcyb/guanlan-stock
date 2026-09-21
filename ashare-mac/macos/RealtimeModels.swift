@@ -7,6 +7,7 @@ struct RealtimeSettings: Codable {
     let model: String
     let barkConfigured: Bool
     let deepseekConfigured: Bool
+    let jevEnabled:Bool?;let jevConfigured:Bool?
 }
 
 struct RealtimeState: Codable {
@@ -22,6 +23,7 @@ struct RealtimeState: Codable {
     let lastScreen: RealtimeSnapshot?
     let lastBottom:RealtimeSnapshot?
     let lastFlow:RealtimeSnapshot?
+    var jevSnapshot:RealtimeSnapshot? { [latest,lastScreen,lastFlow,lastBottom].compactMap{$0}.filter{$0.hasJevCandidates}.max{$0.generatedAt<$1.generatedAt} }
 }
 
 struct RealtimeSnapshot: Codable {
@@ -48,7 +50,9 @@ struct RealtimeSnapshot: Codable {
     let changes:[String:RealtimeSelectionChange]?
     let bottomVolume:BottomVolumeResult?
     let orderflow:RealtimeFlowResult?
+    let jev:JevReview?
     var complete:Bool { ["ready","empty"].contains(status) && runState != "waiting" }
+    var hasJevCandidates:Bool { kind=="screen" && ((complete && strategies.values.contains{!$0.isEmpty}) || (orderflow?.complete==true && !(orderflow?.candidates.isEmpty ?? true)) || (bottomVolume?.complete==true && !(bottomVolume?.candidates.isEmpty ?? true))) }
     var quoteCoverageLabel:String {
         if let batchQuoteCount {
             return "批量覆盖 \(batchQuoteCount) / \(universeCount ?? 0) · D6复核 \(freshCount ?? 0)只"
@@ -185,6 +189,7 @@ struct RealtimeCandidate: Codable, Identifiable {
     let low60:Double?
     let distanceLow60:Double?
     let flowNet:Double?;let flowNetRatio:Double?;let flowNet3:Double?;let flowPositiveDays:Int?;let flowObservedAt:Double?
+    let jev:JevStockReview?
 }
 
 struct RealtimeReview: Codable, Identifiable {
@@ -281,4 +286,19 @@ struct RealtimeStrategyGuide: Identifiable {
               interpretation:"这是用户定义的低位放量观察条件，没有验证其盈利优势，不代表买点或底部已经形成。",
               sourceName:"用户自定义规则 · 2026-09-08",sourceURL:nil)
     ]
+}
+
+struct JevReview:Codable {
+    let status:String;let slot:String;let date:String;let inputSha256:String
+    let model:String?;let reviewedAt:Double?;let expiresAt:Double?;let historical:Bool?
+    let rows:[JevStockReview];let message:String
+}
+struct JevStockReview:Codable,Identifiable {
+    let tsCode:String;let name:String;let price:Double;let quoteAt:Double
+    let decision:String;let modelChoice:String;let confidence:Double;let probabilities:[String:Double]
+    let reason:String;let explanation:String;let historical:Bool;let expired:Bool?;let expiresAt:Double
+    let conditions:[String];let invalidation:String
+    var id:String { tsCode }
+    var isExpired:Bool { historical || expired==true || Date().timeIntervalSince1970>expiresAt }
+    var label:String { isExpired ? "已过期 · 回看":(["buy":"可考虑买入","watch":"观望","avoid":"暂不买"][decision] ?? "未完成") }
 }
