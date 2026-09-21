@@ -303,5 +303,11 @@ struct JevStockReview:Codable,Identifiable {
     var id:String { tsCode }
     var isExpired:Bool { historical || expired==true || Date().timeIntervalSince1970>=expiresAt }
     var decisionNames:[String:String] { scope=="after_close" ? ["buy":"可列入次日计划","watch":"观望","avoid":"暂不列入计划"]:["buy":"可考虑买入","watch":"观望","avoid":"暂不买"] }
-    var label:String { isExpired ? "已过期 · 回看":(decisionNames[decision] ?? "未完成") }
+    var label:String {
+        let value=decisionNames[decision] ?? "未完成"
+        return isExpired ? (historical ? "回看判断：":"当时判断：")+value:value
+    }
+    var expiryNotice:String {
+        scope=="after_close" ? "计划参考时段已结束，入场前需更新行情并重新核验。":"行情已过期，入场前需更新。过期不代表股票已不符合策略。"
+    }
 }

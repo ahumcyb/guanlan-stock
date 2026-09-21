@@ -7,7 +7,8 @@ struct JevStockView:View {
         VStack(alignment:.leading,spacing:8) {
             HStack { Text(review.name).font(.headline);Spacer();Text(review.label).font(.headline).foregroundStyle(review.isExpired ? Color.secondary:(review.decision=="buy" ? Color.teal:Color.orange)) }
             Text(review.tsCode+" · "+(review.scope=="after_close" ? "收盘参考 "+dateText(review.priceDate ?? ""):"行情："+realtimeDate(review.quoteAt))+" · "+String(format:"%.2f",review.price)).font(.caption).foregroundStyle(.secondary)
-            Text(review.isExpired ? "基于原始快照的回看判断，不适用于当前买入。":review.explanation).font(.subheadline)
+            if review.isExpired { Text(review.expiryNotice).font(.caption).foregroundStyle(Color.orange) }
+            Text(review.explanation).font(.subheadline)
             Text("模型原始分类："+(review.decisionNames[review.modelChoice] ?? "未完成")+String(format:" · 置信度 %.0f%%（非盈利概率）",review.confidence*100)).font(.caption).foregroundStyle(.secondary)
             DisclosureGroup("核查条件与失效条件") {
                 ForEach(review.conditions,id:\.self) { Text($0).font(.caption) }
