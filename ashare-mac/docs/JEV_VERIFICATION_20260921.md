@@ -7,6 +7,6 @@
 - 服务器实际回看：20260921-1430为25只，1445为19只，1450为19只；三轮均ready，原始JEV分类全部watch。因接入发生在收盘后，全部为historical，不发送已过期的买入提醒。
 - 已从正式HTTPS接口读回三轮结果，输入SHA与冻结候选一致；使用共享原生模型解码并校验原始轮次通过，所有回看行正确显示过期。
 - Mac 1.12.0（15）已安装。桌面验证工具返回cgWindowNotFound，未声称完成视觉检查。
-- iPhone 1.11.0（15）已编译并签名，路径为`ashare-ios/build/JevDevice/Build/Products/Debug-iphoneos/Guanlan.app`。设备处于paired但开发连接unavailable；安装返回CoreDeviceError 1011，尚未装到手机。已请求用户解锁并连接同一Wi-Fi或数据线；连接后可直接使用已签名构建安装。
+- iPhone 1.11.0（15）已编译并签名，路径为`ashare-ios/build/JevDevice/Build/Products/Debug-iphoneos/Guanlan.app`。设备处于paired但开发连接unavailable；安装返回CoreDeviceError 1011，尚未装到手机。用户随后明确要求暂不安装手机版，已停止安装工作；保留构建，待用户以后明确要求时再安装（届时需复核签名有效期）。
 
 判断只基于输入的量价与规则，未完成公告/财报核查与盈利验证。模型分类置信度不能解释为盈利概率。
