@@ -23,6 +23,10 @@ import Combine
     @Published var realtimeDetailPresented=false
     @Published var realtimeDetailMessage=""
     @Published var daily:DailyState?
+    @Published var dailyJev:JevReview?
+    @Published var dailyJevBusy=false
+    @Published var dailyJevMessage=""
+    var selectedDailyJev:JevReview? { guard let m=snapshot?.manifest,let r=dailyJev,r.bound(to:m) else { return nil };return r }
     @Published var dailyDetail:DailyReport?
     @Published var dailyBusy=false
     @Published var dailyPresented=false
@@ -51,6 +55,7 @@ import Combine
         if startAutomatically { do {
             if let pairing=try CredentialStore.load() { api=try MobileAPI(pairing);connected=true }
             snapshot=try cache.load(strategy)
+            if let m=snapshot?.manifest { dailyJev=cachedDailyJev(cache.root,m) }
             if snapshot != nil { message="已载入上次同步结果" }
         } catch { self.error="上次连接或缓存读取失败，请重新导入配置。" } }
         #if DEBUG
@@ -80,6 +85,7 @@ import Combine
         guard !busy,AfterCloseStrategies.ids.contains(value),value != strategy else { return }
         strategy=value;UserDefaults.standard.set(value,forKey:"mobileStrategy")
         snapshot=try? cache.load(value)
+        if let m=snapshot?.manifest { dailyJev=cachedDailyJev(cache.root,m) }
         Task { await synchronize() }
     }
     func synchronize() async {
@@ -97,6 +103,7 @@ import Combine
         } catch is CancellationError { message="同步已取消，保留原有结果" }
         catch { self.error=error.localizedDescription;message=snapshot == nil ? "同步未完成":"离线缓存可继续使用" }
         await refreshStatus()
+        await refreshDailyJev()
     }
     func refreshStatus() async {
         guard let api else { return }
@@ -105,6 +112,21 @@ import Combine
             status=try mobileDecoder().decode(ServerStatus.self,from:data)
             if status?.job.active==true { message=status!.job.message }
         } catch { if snapshot==nil { self.error=error.localizedDescription } }
+    }
+    func refreshDailyJev() async {
+        guard let api,let m=snapshot?.manifest else { return }
+        do {
+            let value=try await fetchDailyJev(api,root:cache.root,manifest:m)
+            guard snapshot?.manifest==m else { return }
+            if let old=dailyJev,old.bound(to:m),(old.requestedAt ?? 0)>(value.requestedAt ?? 0) { return }
+            dailyJev=value;dailyJevMessage=""
+        } catch { if snapshot?.manifest==m { dailyJevMessage="JEV暂不可读取，保留已核验缓存。" } }
+    }
+    func requestDailyJev() async {
+        guard !dailyJevBusy,let api,let m=snapshot?.manifest else { return }
+        dailyJevBusy=true;defer{dailyJevBusy=false}
+        do { _=try await api.request("/v1/jev/daily/"+m.generation,method:"POST",body:Data("{}".utf8),limit:65536);await refreshDailyJev() }
+        catch { dailyJevMessage=error.localizedDescription }
     }
     func startJob(_ action:String) async {
         guard let api,!busy,["recompute","refresh"].contains(action) else { return }
@@ -122,6 +144,7 @@ import Combine
             await refreshStatus()
             await refreshRealtime()
             await refreshDaily()
+            await refreshDailyJev()
             await syncFavorites()
             if !busy,let manifest=status?.reports[strategy],manifest != snapshot?.manifest { await synchronize() }
             if status?.job.status=="failed" { error=status?.job.message }

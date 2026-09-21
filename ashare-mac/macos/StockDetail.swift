@@ -27,6 +27,9 @@ struct StockDetail: View {
                 if !stock.adjusted || !stock.limitAvailable {
                     Text("复权或限制价尚有缺口，更新后再核对。").font(.system(size:11)).foregroundStyle(Palette.amber)
                 }
+                if stock.state=="入选",let row=store.selectedDailyJev?.rows.first(where:{$0.tsCode==stock.id}) {
+                    GroupBox("JEV · 盘后精选判断") { JevStockView(review:row) }
+                }
                 StockChart(loader:store.chartLoader,name:stock.name,signalDate:stock.tradeDate,
                     signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation,retry:store.loadChart).id(stock.id)
                 Divider()

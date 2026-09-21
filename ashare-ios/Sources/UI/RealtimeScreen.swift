@@ -46,7 +46,7 @@ struct RealtimeScreen: View {
                 Section("JEV · 买入判断") {
                     if let snapshot=store.realtime?.jevSnapshot {
                         if let review=snapshot.jev { JevReviewView(review:review) }
-                        else { Text("启用后会自动分析实时候选；也可从历史轮次发起回看。").font(.caption) }
+                        else { Text("启用后会自动分析实时与盘后精选；也可从历史轮次发起回看。").font(.caption) }
                         Button("分析本轮快照") { Task { await store.realtimeAction("jev",values:["slot":snapshot.slot]) } }.disabled(store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
                     } else { Text("等待筛选轮次；历史分析可在原始结果中查看。").font(.caption) }
                 }
@@ -301,9 +301,9 @@ struct RealtimeSettingsScreen: View {
                         .disabled(store.realtime?.settings.barkConfigured != true || store.realtimeBusy)
                 }
                 Section("JEV · 买入判断") {
-                    Toggle("分析实时候选",isOn:$jevEnabled)
+                    Toggle("分析实时与盘后精选",isOn:$jevEnabled)
                     SecureField(store.realtime?.settings.jevConfigured==true ? "JEV已配置 · 输入新Key替换":"TypeSafe JEV API Key",text:$jevKey).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("向TypeSafe发送本轮候选的公开量价与触发条件，可能产生接口费用。提供可考虑买入、观望或暂不买的分类；置信度不是盈利概率。").font(.caption).foregroundStyle(.secondary)
+                    Text("向TypeSafe发送实时与盘后精选的公开量价与规则条件，可能产生接口费用。提供可考虑买入、观望或暂不买的分类；置信度不是盈利概率。").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("DeepSeek（可选）") {
                     Toggle("附加 AI 研究解读", isOn: $ai)

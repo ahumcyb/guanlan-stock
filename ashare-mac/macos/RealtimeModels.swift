@@ -289,16 +289,19 @@ struct RealtimeStrategyGuide: Identifiable {
 }
 
 struct JevReview:Codable {
+    let scope:String?;let generation:String?;let dataRevision:String?;let sourceReportShas:[String:String]?;let requestedAt:Double?
     let status:String;let slot:String;let date:String;let inputSha256:String
     let model:String?;let reviewedAt:Double?;let expiresAt:Double?;let historical:Bool?
     let rows:[JevStockReview];let message:String
 }
 struct JevStockReview:Codable,Identifiable {
+    let scope:String?;let priceDate:String?;let strategies:[String]?
     let tsCode:String;let name:String;let price:Double;let quoteAt:Double
     let decision:String;let modelChoice:String;let confidence:Double;let probabilities:[String:Double]
     let reason:String;let explanation:String;let historical:Bool;let expired:Bool?;let expiresAt:Double
     let conditions:[String];let invalidation:String
     var id:String { tsCode }
-    var isExpired:Bool { historical || expired==true || Date().timeIntervalSince1970>expiresAt }
-    var label:String { isExpired ? "已过期 · 回看":(["buy":"可考虑买入","watch":"观望","avoid":"暂不买"][decision] ?? "未完成") }
+    var isExpired:Bool { historical || expired==true || Date().timeIntervalSince1970>=expiresAt }
+    var decisionNames:[String:String] { scope=="after_close" ? ["buy":"可列入次日计划","watch":"观望","avoid":"暂不列入计划"]:["buy":"可考虑买入","watch":"观望","avoid":"暂不买"] }
+    var label:String { isExpired ? "已过期 · 回看":(decisionNames[decision] ?? "未完成") }
 }

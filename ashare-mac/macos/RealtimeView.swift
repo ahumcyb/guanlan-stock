@@ -249,9 +249,9 @@ struct RealtimeView: View {
                 SecureField(store.state?.settings.barkConfigured == true ? "Bark 已配置，输入新地址替换" : "Bark 首页 https://api.day.app/设备密钥", text: $bark)
                 HStack { Toggle("附加 DeepSeek 解读", isOn: $ai);Picker("模型", selection: $model) { Text("V4 Flash").tag("deepseek-v4-flash");Text("V4 Pro").tag("deepseek-v4-pro") }.frame(width: 220);Spacer() }
                 SecureField(store.state?.settings.deepseekConfigured == true ? "DeepSeek 已配置，输入新 Key 替换" : "DeepSeek API Key（可选）", text: $deepseek)
-                Toggle("JEV逐股买入判断",isOn:$jevEnabled)
+                Toggle("JEV判断 · 实时与盘后",isOn:$jevEnabled)
                 SecureField(store.state?.settings.jevConfigured==true ? "JEV已配置，输入新Key替换":"TypeSafe JEV API Key",text:$jevKey)
-                Text("JEV接收本轮候选量价，可能产生接口费用；置信度不是盈利概率。").font(.caption)
+                Text("JEV接收实时与盘后精选量价，可能产生接口费用；置信度不是盈利概率。").font(.caption)
                 Text("AI 只解释已筛选的公开量价与条件，可能产生 API 费用；不改变入选结果，也不代替公告核查。凭据通过配对 HTTPS 保存，不进入 Git。").font(.caption).foregroundStyle(Palette.muted)
                 HStack {
                     Button("保存设置") {

@@ -75,6 +75,14 @@ class Service:
         if extended:
             if len(parts)<2 or parts[1] not in ['status','daily']:raise Failure(404,'NOT_FOUND','接口不存在')
             parts[0]='v1'
+        if parts[:3]==['v1','jev','daily'] and len(parts)==4:
+            from .jev_daily import read_daily,request_daily
+            try:
+                if method=='GET':return 200,read_daily(self.realtime,parts[3])
+                if method=='POST' and json.loads(body or b'{}')=={}:return 202,request_daily(self.realtime,parts[3])
+            except BlockingIOError:raise Failure(429,'COOLDOWN','请稍后再试')
+            except (OSError,ValueError,KeyError,TypeError):raise Failure(400,'INVALID_DAILY_JEV','请同步最新精选并检查JEV配置')
+            raise Failure(400,'INVALID_BODY','盘后JEV请求无效')
         if parts==['v1','watchlist']:
             store=WatchlistStore(self.root)
             if method=='GET':return 200,store.public()

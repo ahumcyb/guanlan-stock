@@ -5,6 +5,7 @@ extension AppStore {
         do {
             guard let saved=try publishedCache.load(strategy) else { report=nil;publishedSnapshot=nil;chartLoader.reset();return false }
             publishedSnapshot=saved;report=saved.report
+            if dailyJev?.bound(to:saved.manifest) != true { dailyJev=cachedDailyJev(publishedCache.root,saved.manifest) }
             if !saved.report.stocks.contains(where:{$0.id==selection}) { selection=saved.report.stocks.first(where:{$0.rank==1})?.id }
             progress="已载入 \(dateText(saved.report.asOf)) · 多策略同一发布版本";loadChart();return true
         } catch { report=nil;publishedSnapshot=nil;selection=nil;chartLoader.reset();progress="已同步缓存暂不可读取，等待重新同步";return false }
@@ -42,10 +43,27 @@ extension AppStore {
                 } catch { if publishedMode && !busy { progress=report==nil ? "服务器暂未连接":"离线缓存 · \(dateText(report!.asOf))" } }
                 if let data=try? await api.request("/v2/daily",limit:128*1024),let value=try? mobileDecoder().decode(DailyState.self,from:data), (try? value.validate()) != nil { dailyState=value }
                 if let data=try? await api.request("/v1/realtime",limit:2*1024*1024) { realtimeState=try? mobileDecoder().decode(RealtimeState.self,from:data) }
+                await refreshDailyJev()
                 await syncFavorites()
             }
             do { try await Task.sleep(for:.seconds(serverStatus?.job.active==true ? 3:20)) } catch { return }
         }
+    }
+
+    func refreshDailyJev() async {
+        guard publishedMode,let api=publishedAPI,let m=publishedSnapshot?.manifest else { return }
+        do {
+            let value=try await fetchDailyJev(api,root:publishedCache.root,manifest:m)
+            guard publishedMode,publishedSnapshot?.manifest==m else { return }
+            if let old=dailyJev,old.bound(to:m),(old.requestedAt ?? 0)>(value.requestedAt ?? 0) { return }
+            dailyJev=value;dailyJevMessage=""
+        } catch { if publishedSnapshot?.manifest==m { dailyJevMessage="JEV暂不可读取，保留已核验缓存。" } }
+    }
+    func requestDailyJev() async {
+        guard !dailyJevBusy,let api=publishedAPI,let m=publishedSnapshot?.manifest else { return }
+        dailyJevBusy=true;defer{dailyJevBusy=false}
+        do { _=try await api.request("/v1/jev/daily/"+m.generation,method:"POST",body:Data("{}".utf8),limit:65536);await refreshDailyJev() }
+        catch { dailyJevMessage=error.localizedDescription }
     }
 
     func syncFavorites() async {

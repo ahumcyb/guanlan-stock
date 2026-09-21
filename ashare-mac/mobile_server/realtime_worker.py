@@ -221,8 +221,11 @@ def main(args):
         threading.Thread(target=service_pulse, daemon=True).start()
         def jev_loop():
             from .jev import process_one
+            from .jev_daily import process_daily
             while not stop.wait(2):
                 try:process_one(store)
+                except Exception:pass
+                try:process_daily(store)
                 except Exception:pass
         threading.Thread(target=jev_loop,daemon=True).start()
         try:

@@ -8,6 +8,7 @@ struct WorkspaceView:View {
     @State private var filter="精选"
     @State private var order="匹配分"
     @State private var showStatistics=false
+    @State private var showJev=false
     private var filtered:[Stock] {
         let text=query.trimmingCharacters(in:.whitespacesAndNewlines)
         var rows=(store.report?.stocks ?? []).filter { stock in
@@ -28,6 +29,18 @@ struct WorkspaceView:View {
         HSplitView {
             VStack(alignment:.leading,spacing:0) {
                 overview
+                if !favoritesOnly && store.publishedMode {
+                    DisclosureGroup("JEV · 盘后精选判断",isExpanded:$showJev) {
+                        ScrollView {
+                            VStack(alignment:.leading,spacing:10) {
+                                Button("分析本版精选") { Task { await store.requestDailyJev() } }.disabled(store.dailyJevBusy || store.realtimeState?.settings.jevEnabled != true)
+                                if let review=store.selectedDailyJev { JevReviewView(review:review,codes:Set((store.report?.stocks ?? []).filter{$0.state=="入选"}.map(\.id))) }
+                                else { Text("同步后自动分析五套策略精选，同一股票合并判断。").font(.caption).foregroundStyle(.secondary) }
+                                if !store.dailyJevMessage.isEmpty { Text(store.dailyJevMessage).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }.frame(maxHeight:230)
+                    }.padding(.horizontal,20).padding(.bottom,12)
+                }
                 controls
                 table
                 HStack {

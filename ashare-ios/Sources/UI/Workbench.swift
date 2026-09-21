@@ -98,6 +98,14 @@ struct Workbench:View {
                                     }.font(.subheadline)
                                 }.padding(.vertical,4)
                             }
+                            Section("JEV · 盘后精选判断") {
+                                DisclosureGroup("查看本策略的 JEV 判断") {
+                                    if let review=store.selectedDailyJev { JevReviewView(review:review,codes:Set(report.stocks.filter{$0.state=="入选"}.map(\.id))) }
+                                    else { Text("同步后自动分析五套策略精选，同一股票合并判断。").font(.caption).foregroundStyle(.secondary) }
+                                }
+                                Button("分析本版精选") { Task { await store.requestDailyJev() } }.disabled(store.dailyJevBusy || store.realtime?.settings.jevEnabled != true)
+                                if !store.dailyJevMessage.isEmpty { Text(store.dailyJevMessage).font(.caption).foregroundStyle(.secondary) }
+                            }
                             Section {
                                 Picker("筛选",selection:$filter) { ForEach(["精选","转强","等待","全部"],id:\.self) { Text($0=="转强" && report.conditionLabel ? "符合":$0).tag($0) } }.pickerStyle(.segmented)
                             }.listRowSeparator(.hidden)

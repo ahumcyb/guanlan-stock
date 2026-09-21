@@ -22,6 +22,10 @@ import UniformTypeIdentifiers
     @Published var serverStatus:ServerStatus?
     @Published var dailyState:DailyState?
     @Published var realtimeState:RealtimeState?
+    @Published var dailyJev:JevReview?
+    @Published var dailyJevBusy=false
+    @Published var dailyJevMessage=""
+    var selectedDailyJev:JevReview? { guard publishedMode,let m=publishedSnapshot?.manifest,let r=dailyJev,r.bound(to:m) else { return nil };return r }
     @Published var favoritesMessage="自选等待同步"
     var publishedAPI:MobileAPI?
     var publishedSnapshot:CachedSnapshot?

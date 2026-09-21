@@ -9,6 +9,15 @@ import Foundation
             "conditions":["核查公告"],"invalidation":"原信号失效则重新评估"]
         func decodeRow() throws -> JevStockReview { try decoder.decode(JevStockReview.self,from:JSONSerialization.data(withJSONObject:row)) }
         let fresh=try decodeRow();assert(!fresh.isExpired && fresh.label=="可考虑买入")
+        row["scope"]="after_close";row["price_date"]="20260921";row["strategies"]=["leaders","pullback"]
+        let daily=try decodeRow();assert(daily.label=="可列入次日计划")
+        let hash=String(repeating:"a",count:64)
+        let manifest=MobileManifest(schemaVersion:1,generation:"20260921T170000-abcdef",strategy:"leaders",asOf:"20260921",reportBytes:10,reportSha256:hash,stockCount:1,dataRevision:"20260921-aaaaaaaaaaaaaaaa")
+        var object:[String:Any]=["scope":"after_close","generation":manifest.generation,"slot":manifest.generation,"date":manifest.asOf,"data_revision":manifest.dataRevision,"source_report_shas":["leaders":hash],"status":"ready","input_sha256":hash,"rows":[row],"message":"done"]
+        func decodeReview() throws -> JevReview { try decoder.decode(JevReview.self,from:JSONSerialization.data(withJSONObject:object)) }
+        let bound=try decodeReview();assert(bound.bound(to:manifest))
+        object["source_report_shas"]=["leaders":String(repeating:"b",count:64)];let mismatchHash=try decodeReview();assert(!mismatchHash.bound(to:manifest))
+        object["source_report_shas"]=["leaders":hash];object["generation"]="20260921T180000-abcdef";let mismatchGeneration=try decodeReview();assert(!mismatchGeneration.bound(to:manifest))
         row["expires_at"]=now-1;let expired=try decodeRow();assert(expired.isExpired)
         row["expires_at"]=now+175;row["expired"]=true;let serverExpired=try decodeRow();assert(serverExpired.isExpired)
         row["expired"]=false;row["historical"]=true;let historical=try decodeRow();assert(historical.label=="已过期 · 回看")

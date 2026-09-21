@@ -14,7 +14,7 @@ swiftc -parse-as-library -target arm64-apple-macosx14.0 \
 .cache/product-notification-tests
 swiftc -parse-as-library -target arm64-apple-macosx14.0 \
   ../ashare-mac/macos/Models.swift ../ashare-mac/macos/ChartData.swift ../ashare-mac/macos/DailyModels.swift ../ashare-mac/macos/RealtimeModels.swift \
-  Sources/Core/Connection.swift Sources/Core/Snapshots.swift Sources/Core/Watchlist.swift Sources/Core/MobileStore.swift \
+  Sources/Core/Connection.swift Sources/Core/Snapshots.swift Sources/Core/Watchlist.swift Sources/Core/JevDaily.swift Sources/Core/MobileStore.swift \
   Tests/NotificationRaceTests.swift -o .cache/notification-race-tests
 .cache/notification-race-tests
 bash scripts/test-daily.sh
