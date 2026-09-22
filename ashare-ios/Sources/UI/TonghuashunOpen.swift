@@ -9,7 +9,6 @@ enum TonghuashunOpener {
     static func open(_ url: URL) async -> Bool {
         #if canImport(UIKit)
         let application = UIApplication.shared
-        guard application.canOpenURL(url) else { return false }
         return await application.open(url)
         #else
         return false
@@ -21,7 +20,7 @@ struct OpenInTonghuashunButton: View {
     let tsCode: String
     @State private var failure: String?
     var body: some View {
-        Button("用同花顺打开") { Task { await open() } }
+        Button("查看同花顺个股页") { Task { await open() } }
         .alert("无法打开同花顺", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) {}
         } message: {
@@ -32,11 +31,11 @@ struct OpenInTonghuashunButton: View {
     @MainActor
     private func open() async {
         guard let url = TonghuashunLink.url(tsCode: tsCode) else {
-            failure = "这只股票暂时无法交给同花顺。"
+            failure = "这只股票暂时没有可核验的同花顺个股页。"
             return
         }
         if await TonghuashunOpener.open(url) == false {
-            failure = "未安装同花顺，或系统无法打开。"
+            failure = "无法打开同花顺个股网页，请稍后重试。"
         }
     }
 }
