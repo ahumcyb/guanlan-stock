@@ -245,6 +245,7 @@ struct RealtimeCandidateDetail: View {
             Section {
                 Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).font(.largeTitle).monospacedDigit()
                 LabeledContent("代码", value: candidate.tsCode)
+                OpenInTonghuashunButton(tsCode: candidate.tsCode)
                 LabeledContent("状态", value: candidate.state)
                 LabeledContent("行情时间", value: realtimeDate(candidate.quoteAt))
                 NavigationLink {
