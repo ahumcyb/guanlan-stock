@@ -14,6 +14,6 @@ enum TonghuashunLink {
         let market = String(tsCode.suffix(2))
         guard (market == "SH" && code.hasPrefix("6")) ||
               (market == "SZ" && (code.hasPrefix("0") || code.hasPrefix("3"))) else { return nil }
-        return "https://stockpage.10jqka.com.cn/\(code)/"
+        return "https://m.10jqka.com.cn/stockpage/hs_\(code)/"
     }
 }
