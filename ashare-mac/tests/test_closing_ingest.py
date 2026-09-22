@@ -100,6 +100,8 @@ class ClosingIngestTests(unittest.TestCase):
                     'close_attestation': self.proof,
                 },
             }
+            for code in codes:
+                self.entries[f'research/{strategy}/details/{code}.json']=self._json({'ts_code':code})
             raw = self._json(report)
             self.entries[f'research/{strategy}/report.json'] = raw
             self.entries[f'research/{strategy}/manifest.json'] = self._json({

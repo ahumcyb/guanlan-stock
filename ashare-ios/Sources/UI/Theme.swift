@@ -13,7 +13,8 @@ enum MobileTheme {
     static let background=Color(nsColor:.windowBackgroundColor)
     #endif
     static let line=Color.primary.opacity(0.08)
-    static func change(_ value:Double)->Color { value>=0 ? up:down }
+    /// 红涨绿跌；零涨跌用中性色，不算上涨红。
+    static func change(_ value:Double)->Color { value>0 ? up:(value<0 ? down:muted) }
 }
 
 struct ResearchCard<Content:View>:View {

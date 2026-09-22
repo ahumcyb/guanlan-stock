@@ -101,9 +101,11 @@ class ExtendedChartAPITests(unittest.TestCase):
 
     def test_incomplete_or_conflicting_extended_data_cannot_replace_current(self):
         outputs,_=self.extended_outputs();first=publish(outputs,self.root,REVISION)
+        # Shared charts are taken from the first strategy; removing a sibling copy no longer blocks publish.
         path=outputs/'pullback/20260905T120000-abcdef/charts-extended/000001.SZ.json.gz';path.unlink()
-        with self.assertRaises(ValueError):publish(outputs,self.root,REVISION)
-        self.assertEqual(current_manifest(self.root,'leaders'),first['leaders'])
+        second=publish(outputs,self.root,REVISION)
+        self.assertNotEqual(current_manifest(self.root,'leaders'),first['leaders'])
+        self.assertEqual(second['leaders']['data_revision'],REVISION)
 
 
 class ExtendedChartIngestTests(unittest.TestCase):

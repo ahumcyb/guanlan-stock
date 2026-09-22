@@ -99,7 +99,7 @@ struct RealtimeScreen: View {
                                         HStack {
                                             Text(candidate.name).font(.headline)
                                             Spacer()
-                                            Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).monospacedDigit().foregroundStyle(MobileTheme.up)
+                                            Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).monospacedDigit().foregroundStyle(MobileTheme.change(candidate.change))
                                         }
                                         Text("\(candidate.tsCode) · \(candidate.state)").font(.caption).foregroundStyle(.secondary)
                                         Text("行情 \(realtimeDate(candidate.quoteAt))").font(.caption2).foregroundStyle(.secondary)
@@ -120,7 +120,7 @@ struct RealtimeScreen: View {
                     Section("昨日候选 · 早盘复查") {
                         ForEach(reviews) { row in
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("\(row.name)  \(String(format: "%+.2f%%", row.change))").font(.headline)
+                                Text("\(row.name)  \(String(format: "%+.2f%%", row.change))").font(.headline).foregroundStyle(MobileTheme.change(row.change))
                                 Text("\(row.note) · 参考价 \(String(format: "%.2f", row.referencePrice))").font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -181,7 +181,7 @@ struct RealtimeHistoryDetail:View {
                                 }
                                 let rows=report.strategies[strategy] ?? []
                                 if rows.isEmpty { Text("本轮已完成筛选，0 只候选").foregroundStyle(.secondary) }
-                                ForEach(rows) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f  %+.2f%%",row.price,row.change)).monospacedDigit() } } }
+                                ForEach(rows) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { HStack { Text(row.name);Spacer();Text(String(format:"%.2f  %+.2f%%",row.price,row.change)).monospacedDigit().foregroundStyle(MobileTheme.change(row.change)) } } }
                             }
                         }
                     }
@@ -243,7 +243,7 @@ struct RealtimeCandidateDetail: View {
     var body: some View {
         List {
             Section {
-                Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).font(.largeTitle).monospacedDigit()
+                Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).font(.largeTitle).monospacedDigit().foregroundStyle(MobileTheme.change(candidate.change))
                 LabeledContent("代码", value: candidate.tsCode)
                 OpenInTonghuashunButton(tsCode: candidate.tsCode)
                 LabeledContent("状态", value: candidate.state)

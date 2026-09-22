@@ -12,7 +12,7 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .artifacts import PREVIOUS_STRATEGIES,STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,atomic_json,checked_file,current_manifest
+from .artifacts import PREVIOUS_STRATEGIES,STRATEGIES,SUPPORTED_STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,MAX_DETAIL,atomic_json,checked_file,current_manifest,published_strategies
 from .queue import JobQueue,canonical_uuid
 from .realtime import RealtimeStore
 from .daily import DailyStore
@@ -175,8 +175,9 @@ class Service:
             for strategy in (STRATEGIES if extended else PREVIOUS_STRATEGIES):
                 try:available[strategy]=current_manifest(self.root,strategy)
                 except (OSError,ValueError,KeyError):pass
+            revisions=self.content_revisions(available)
             return 200,dict(schema_version=1,job=self.state(),worker_online=online,mac_online=self.queue.mac_online(),
-                can_refresh=online and info.get('can_refresh',False),reports=available,
+                can_refresh=online and info.get('can_refresh',False),reports=available,revisions=revisions,
                 market_provider=market_provider_name(),
                 datta=DattaLeaseStore(self.root).public() if (self.jobs/'datta-owner.json').exists() else {'owner':None,'phase':'waiting'},
                 market_status=market_status(self.realtime.calendar(),local_now()))
@@ -196,6 +197,8 @@ class Service:
             if not GENERATION.fullmatch(parts[3]):raise Failure(400,'INVALID_VERSION','数据版本无效')
             release=self.root/'releases'/parts[3]
             if len(parts)==5 and parts[4]=='report.json':return 200,checked_file(self.root,release/strategy/'report.json',MAX_REPORT)
+            if len(parts)==6 and parts[4]=='stocks' and parts[5].endswith('.json') and CODE.fullmatch(parts[5][:-5]):
+                return 200,checked_file(self.root,release/strategy/'details'/parts[5],MAX_DETAIL)
             if len(parts)==6 and parts[4]=='charts' and parts[5].endswith('.json') and CODE.fullmatch(parts[5][:-5]):
                 return 200,checked_file(self.root,release/'charts'/parts[5],MAX_CHART)
             if len(parts)==6 and parts[4]=='charts-extended' and parts[5].endswith('.json') and CODE.fullmatch(parts[5][:-5]):
@@ -205,6 +208,28 @@ class Service:
                 manifest=json.loads(checked_file(self.root,release/strategy/'manifest.json',65536).read_text())
                 return 200,read_extended(checked_file(self.root,path,MAX_COMPRESSED),parts[5][:-5],manifest['as_of'],manifest['data_revision'])
         raise Failure(404,'NOT_FOUND','没有找到这个数据接口')
+
+    def content_revisions(self,reports):
+        generation=next(iter({m['generation'] for m in reports.values()}),'')
+        daily_digest=''
+        try:
+            daily=self.daily.public()
+            daily_digest=hashlib.sha256(json.dumps(daily,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        except Exception:pass
+        realtime_digest='';history_digest=''
+        try:
+            summary=self.realtime.summary()
+            realtime_digest=hashlib.sha256(json.dumps(summary,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            history=self.realtime.history()
+            history_digest=hashlib.sha256(json.dumps(history,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        except Exception:pass
+        jev_digest=''
+        if GENERATION.fullmatch(generation):
+            record=self.realtime.root/'jev-daily'/(generation+'.json')
+            if not record.is_symlink() and record.is_file():
+                stat=record.stat();jev_digest=str(stat.st_mtime_ns)+':'+str(stat.st_size)
+        return dict(reports=generation,daily=daily_digest,daily_jev=jev_digest,
+                    realtime=realtime_digest,realtime_history=history_digest)
 
 
 class Handler(BaseHTTPRequestHandler):

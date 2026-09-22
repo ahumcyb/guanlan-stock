@@ -19,10 +19,12 @@ import Foundation
             guard let api else { return }
             if action=="state" {
                 let value=try mobileDecoder().decode(RealtimeState.self,from:await api.request("/v1/realtime",limit:2*1024*1024))
-                guard value.schemaVersion==1 else { throw MobileFailure.invalidData };state=value
+                guard value.schemaVersion==1 else { throw MobileFailure.invalidData }
+                state=value
                 let records=try mobileDecoder().decode(RealtimeHistory.self,from:await api.request("/v1/realtime/history",limit:128*1024))
                 guard records.schemaVersion==1,records.runs.count<=90 else { throw MobileFailure.invalidData }
-                history=records.runs;message="已同步实时状态与原始轮次"
+                history=records.runs
+                message="已同步实时状态与原始轮次"
             } else if action=="run",let slot=values["slot"] as? String,validRealtimeSlot(slot) {
                 detail=nil
                 let value=try mobileDecoder().decode(RealtimeSnapshot.self,from:await api.request("/v1/realtime/runs/"+slot,limit:256*1024))
@@ -95,6 +97,7 @@ struct RealtimeView: View {
                                 .font(.caption).foregroundStyle(Palette.muted)
                             ForEach(latest.reviews) { r in
                                 Text("\(r.name)  \(String(format: "%+.2f%%", r.change))   \(r.note) · 相对昨日筛选价")
+                                    .foregroundStyle(Palette.change(r.change))
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                     }
@@ -208,7 +211,7 @@ struct RealtimeView: View {
             ForEach(candidates) { row in
                 GroupBox {
                     VStack(alignment: .leading, spacing: 9) {
-                        HStack { Text(row.name).font(.headline);Spacer();Text(String(format: "%.2f  %+.2f%%", row.price, row.change)).foregroundStyle(Palette.up).monospacedDigit() }
+                        HStack { Text(row.name).font(.headline);Spacer();Text(String(format: "%.2f  %+.2f%%", row.price, row.change)).foregroundStyle(Palette.change(row.change)).monospacedDigit() }
                         Text("\(row.tsCode) · \(row.state)").font(.caption).foregroundStyle(Palette.muted)
                         Text("行情 \(realtimeDate(row.quoteAt))\(row.timeBasis == "provider_updated_at" ? " · 供应商更新时间" : "")").font(.caption2).foregroundStyle(Palette.muted)
                         ChartLink(target:ChartTarget(code:row.tsCode,name:row.name,

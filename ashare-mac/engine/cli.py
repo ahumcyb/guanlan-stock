@@ -38,8 +38,35 @@ def records(frame):
     return json.loads(frame.replace([np.inf,-np.inf], np.nan).to_json(orient='records', double_precision=6))
 
 
-def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
+def write_charts(signals,codes,stage,asof,data_revision):
+    """Write one shared chart set for the requested codes only."""
+    chart_cols = ['trade_date','adj_open','adj_high','adj_low','price','ma10','ma20','ma60','vol']
+    from .chart_data import make_extended, write_extended
+    (stage/'charts').mkdir(exist_ok=True)
+    wanted=set(codes)
+    tails = signals[signals.ts_code.isin(wanted)].groupby('ts_code',sort=False).tail(500) if wanted else signals.iloc[0:0]
+    for code, group in tails.groupby('ts_code',sort=False):
+        chart = group.tail(120)[chart_cols].copy()
+        scale = float(group.close.iloc[-1])/group.price.iloc[-1]
+        for c in chart_cols[1:-1]: chart[c] *= scale
+        chart.columns = ['date','open','high','low','close','ma10','ma20','ma60','volume']
+        (stage/'charts'/f'{code}.json').write_text(json.dumps(records(chart),separators=(',',':')),encoding='utf-8')
+        write_extended(stage/'charts-extended'/f'{code}.json.gz',make_extended(group,code,asof,data_revision))
+
+
+LIST_FIELDS=('ts_code','name','industry','trade_date','close','change','score','state','rank',
+             'eligible','stale','adjusted','limit_available','amount20',
+             'trend_ok','strength_ok','pullback_ok','volume_ok','turn_ok')
+WATCH_STATES=frozenset({'入选','等待','观察','转强','符合'})
+
+
+def list_stock(stock):
+    return stock if stock.get('state')=='入选' else {key:stock[key] for key in LIST_FIELDS if key in stock}
+
+
+def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts='priority'):
     root, overlay, output = root.resolve(), overlay.resolve(), output.resolve()
+    if charts not in ['none','priority','all']:raise ValueError('未知 K 线生成范围')
     if output == root or output in root.parents or root in output.parents:
         raise ValueError('报告输出目录必须与行情源目录分离')
     output.mkdir(parents=True, exist_ok=True)
@@ -165,27 +192,31 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders'):
             last_update=last_update,orderflow_status=orderflow_status)
         generation = now.strftime('%Y%m%dT%H%M%S')+'-'+os.urandom(3).hex()
         stage = output/('.staging-'+generation)
-        stage.mkdir(); (stage/'charts').mkdir()
+        stage.mkdir()
         try:
-            progress('生成 K 线、研究报告和可导出的选股表…')
-            chart_cols = ['trade_date','adj_open','adj_high','adj_low','price','ma10','ma20','ma60','vol']
-            from .chart_data import make_extended, write_extended
-            tails = signals.groupby('ts_code',sort=False).tail(500)
-            for code, group in tails.groupby('ts_code',sort=False):
-                chart = group.tail(120)[chart_cols].copy()
-                scale = float(group.close.iloc[-1]/group.price.iloc[-1])
-                for c in chart_cols[1:-1]: chart[c] *= scale
-                chart.columns = ['date','open','high','low','close','ma10','ma20','ma60','volume']
-                (stage/'charts'/f'{code}.json').write_text(json.dumps(records(chart),separators=(',',':')),encoding='utf-8')
-                write_extended(stage/'charts-extended'/f'{code}.json.gz',make_extended(group,code,asof,data_revision))
+            progress('生成研究报告、条件明细和可导出的选股表…')
+            details=stage/'details';details.mkdir()
+            full_rows=records(stocks)
+            for row in full_rows:
+                code=row['ts_code']
+                (details/f'{code}.json').write_text(json.dumps(row,ensure_ascii=False,allow_nan=False,separators=(',',':')),encoding='utf-8')
+            list_rows=[list_stock(row) for row in full_rows]
+            report['stocks']=list_rows
+            if charts!='none':
+                progress('按数据版本写入共用 K 线…')
+                chart_codes=sorted({row['ts_code'] for row in full_rows if charts=='all' or row.get('state') in WATCH_STATES})
+                write_charts(signals,chart_codes,stage,asof,data_revision)
+            else:(stage/'charts').mkdir(exist_ok=True)
             atomic_json(stage/'report.json',report)
             csv = stocks[stocks.state=='入选'].sort_values('rank').copy()
             csv.rename(columns={'ts_code':'代码','name':'名称','industry':'行业','trade_date':'信号日期',
                                 'close':'收盘价','score':'匹配分','state':'状态','rank':'排名'}).to_csv(stage/'candidates.csv',index=False,encoding='utf-8-sig')
             pd.DataFrame(backtest['events']).to_csv(stage/'events.csv',index=False,encoding='utf-8-sig')
             readback = json.loads((stage/'report.json').read_text())
-            if len(readback['stocks']) != len(stocks) or readback['as_of'] != asof:
+            if len(readback['stocks']) != len(list_rows) or readback['as_of'] != asof:
                 raise ValueError('报告读回校验失败')
+            if any(set(row)-set(LIST_FIELDS) for row in list_rows if row.get('state')!='入选'):
+                raise ValueError('短列表字段校验失败')
             destination = output/generation
             stage.rename(destination)
             atomic_json(output/'current.json',dict(generation=generation, as_of=asof,
@@ -202,8 +233,9 @@ if __name__=='__main__':
     parser.add_argument('--overlay',type=Path,default=Path(__file__).resolve().parents[1]/'data')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--strategy',choices=STRATEGIES,default='leaders')
+    parser.add_argument('--charts',choices=['none','priority','all'],default='priority')
     a=parser.parse_args()
-    try: generate(a.data_root,a.overlay,a.output,a.strategy)
+    try: generate(a.data_root,a.overlay,a.output,a.strategy,a.charts)
     except Exception as e:
         print(str(e) if isinstance(e,ValueError) else f'计算失败（{type(e).__name__}），旧报告已保留',flush=True)
         raise SystemExit(1)

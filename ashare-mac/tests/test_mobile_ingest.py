@@ -37,8 +37,13 @@ class IngestTests(unittest.TestCase):
         entries['market/manifest.json']=json.dumps(manifest).encode()
         entries['bundle.json']=json.dumps(metadata).encode()
         for strategy in ['leaders','pullback','golden_pit','left_rebound','orderflow']:
+            stock={'ts_code':'000001.SZ','name':'测试','industry':'银行',
+                'trade_date':'20260904','close':10.0,'change':0.0,'score':1.0,'state':'入选','rank':1,
+                'eligible':True,'stale':False,'adjusted':True,'limit_available':True,
+                'trend_ok':True,'strength_ok':True,'pullback_ok':True,'volume_ok':True,'turn_ok':True}
             report=json.dumps({'schema_version':1,'strategy_id':strategy,'as_of':'20260904',
-                'data_revision':manifest['revision'],'stocks':[{'ts_code':'000001.SZ'}]}).encode()
+                'data_revision':manifest['revision'],'stocks':[stock]}).encode()
+            entries[f'research/{strategy}/details/000001.SZ.json']=json.dumps(stock).encode()
             entries[f'research/{strategy}/report.json']=report
             entries[f'research/{strategy}/manifest.json']=json.dumps({'schema_version':1,'strategy':strategy,
                 'generation':metadata['generation'],'as_of':'20260904','data_revision':manifest['revision'],
@@ -58,6 +63,16 @@ class IngestTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive,'a') as output:output.writestr('research/charts/999999.SH.json','[]')
         rejected=self.root/'rejected';rejected.mkdir()
         with self.assertRaises(ValueError):extract(self.archive,rejected)
+
+    def test_missing_detail_is_rejected_before_activation(self):
+        self.bundle()
+        with zipfile.ZipFile(self.archive) as original:
+            members={n:original.read(n) for n in original.namelist() if n!='research/leaders/details/000001.SZ.json'}
+        with zipfile.ZipFile(self.archive,'w') as output:
+            for name,data in members.items():output.writestr(name,data)
+        destination=self.root/'missing-detail';destination.mkdir()
+        with self.assertRaisesRegex(ValueError,'Stock details missing'):
+            extract(self.archive,destination)
 
     def test_missing_fourth_report_cannot_replace_current(self):
         self.bundle()

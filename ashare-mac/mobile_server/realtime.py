@@ -2,6 +2,7 @@
 import fcntl
 from .datta_ownership import serialize_source
 import hmac
+import hashlib
 import json
 import math
 import os
@@ -306,6 +307,29 @@ class RealtimeStore:
             schedule=['14:30 初筛', '14:45 复核', '14:50 提醒'],
             events=list(reversed(state['events'][-30:])), latest=attach(self.root,dict(state['runs'][-1],run_state=run_state(state['runs'][-1]))) if state['runs'] else None,
             last_screen=last_screen,last_bottom=last_bottom,last_flow=last_flow)
+
+    def summary(self):
+        """Heartbeat-sized realtime view: counts and status, not full candidate rows."""
+        value=self.public()
+        def slim(report):
+            if not isinstance(report,dict):return None
+            report=dict(report)
+            strategies=report.get('strategies') or {}
+            report['strategies']={key:len(rows) if isinstance(rows,list) else 0 for key,rows in strategies.items()}
+            report['strategy_counts']=dict(report['strategies'])
+            if isinstance(report.get('orderflow'),dict):
+                flow=dict(report['orderflow']);flow['candidate_count']=len(flow.get('candidates') or []);flow['candidates']=[];report['orderflow']=flow
+            if isinstance(report.get('bottom_volume'),dict):
+                bottom=dict(report['bottom_volume']);bottom['candidate_count']=len(bottom.get('candidates') or []);bottom['candidates']=[];report['bottom_volume']=bottom
+            jev=report.get('jev') or {}
+            report['jev_revision']=[jev.get('status'),jev.get('reviewed_at'),jev.get('request_id')]
+            for field in ['ai','reviews','changes']:
+                report[field+'_revision']=hashlib.sha256(json.dumps(report.get(field),ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            report['reviews']=[];report.pop('ai',None);report.pop('jev',None);report.pop('changes',None)
+            return report
+        for key in ['latest','last_screen','last_bottom','last_flow']:
+            value[key]=slim(value.get(key))
+        return value
 
     def history(self):return RealtimeArchive(self.root).history()
     def run(self,slot):

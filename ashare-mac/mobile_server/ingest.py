@@ -11,7 +11,7 @@ from pathlib import Path,PurePosixPath
 from deployment.publish import verify,publish as publish_market
 from engine.snapshot_protocol import FILE_NAMES,REVISION,sha256_file
 from engine.close_proof import valid_date,verify_package_close
-from .artifacts import STRATEGIES,GENERATION,CODE,MAX_REPORT,MAX_CHART,checked_file,atomic_json,preserved_legacy_generations
+from .artifacts import STRATEGIES,PREVIOUS_STRATEGIES,valid_strategy_group,GENERATION,CODE,MAX_REPORT,MAX_CHART,MAX_DETAIL,checked_file,atomic_json,preserved_legacy_generations,WATCH_STATES,priority_chart_codes,validate_details
 from .queue import PERSISTENT_FIELDS,CONTEXT_FIELDS
 
 MAX_EXPANDED_TOTAL=1024*1024*1024
@@ -23,6 +23,8 @@ def member_limit(name):
     if len(parts)==3 and parts[:2]==('market','raw') and parts[2] in FILE_NAMES:return 512*1024*1024
     if len(parts)==3 and parts[0]=='research' and parts[1] in STRATEGIES and parts[2] in ['report.json','manifest.json']:
         return MAX_REPORT if parts[2]=='report.json' else 65536
+    if len(parts)==4 and parts[0]=='research' and parts[1] in STRATEGIES and parts[2]=='details' and parts[3].endswith('.json') and CODE.fullmatch(parts[3][:-5]):
+        return MAX_DETAIL
     if len(parts)==3 and parts[:2]==('research','charts') and parts[2].endswith('.json') and CODE.fullmatch(parts[2][:-5]):return MAX_CHART
     if len(parts)==3 and parts[:2]==('research','charts-extended') and parts[2].endswith('.json.gz') and CODE.fullmatch(parts[2][:-8]):return MAX_CHART
     raise ValueError('Unexpected archive entry')
@@ -32,7 +34,7 @@ def extract(bundle,destination):
     with zipfile.ZipFile(bundle) as archive:
         members=archive.infolist();names=[m.filename for m in members]
         expanded_total=sum(m.file_size for m in members if not m.filename.startswith('research/charts-extended/'))
-        if len(members)>21000 or len(set(names))!=len(names) or sum(m.file_size for m in members)>512*1024*1024:raise ValueError('Archive limits exceeded')
+        if len(members)>80000 or len(set(names))!=len(names) or sum(m.file_size for m in members)>512*1024*1024:raise ValueError('Archive limits exceeded')
         for entry in members:
             mode=entry.external_attr>>16
             if entry.is_dir() or stat.S_ISLNK(mode) or entry.flag_bits&1 or entry.file_size>member_limit(entry.filename):raise ValueError('Unsafe archive entry')
@@ -52,8 +54,10 @@ def extract(bundle,destination):
     if closing.issubset(metadata):
         if not valid_date(metadata['expected_as_of']):raise ValueError('Invalid expected closing date')
         verify_package_close(destination/'market',metadata['expected_as_of'],metadata['close_attestation'])
-    codes=None
-    for strategy in STRATEGIES:
+    codes=None;reports=[]
+    present=[strategy for strategy in STRATEGIES if (destination/'research'/strategy/'manifest.json').is_file()]
+    if tuple(present)!=STRATEGIES:raise ValueError('Complete five-strategy publication required')
+    for strategy in present:
         folder=destination/'research'/strategy
         info=json.loads(checked_file(destination,folder/'manifest.json',65536).read_text())
         report_bytes=checked_file(destination,folder/'report.json',MAX_REPORT).read_bytes()
@@ -70,17 +74,22 @@ def extract(bundle,destination):
         current={stock['ts_code'] for stock in report['stocks']}
         if len(current)!=info['stock_count'] or len(current)!=len(report['stocks']) or not 1<=len(current)<=10000 or not all(CODE.fullmatch(code) for code in current):raise ValueError('Invalid research stock universe')
         if codes is not None and current!=codes:raise ValueError('Research universes differ')
-        codes=current
+        validate_details(folder/'details',report['stocks'])
+        codes=current;reports.append(report)
     charts=destination/'research/charts'
     extended=destination/'research/charts-extended'
     def consume(size):
         nonlocal expanded_total
         expanded_total+=size
         if expanded_total>MAX_EXPANDED_TOTAL:raise ValueError('Nested chart expansion limit exceeded')
-    if extended.exists() and {p.name for p in extended.iterdir()}!={code+'.json.gz' for code in codes}:
-        raise ValueError('Missing or unexpected extended charts')
-    if {p.name for p in charts.iterdir()}!={code+'.json' for code in codes}:raise ValueError('Missing or unexpected charts')
-    for code in codes:
+    chart_names={p.name for p in charts.iterdir()} if charts.is_dir() else set()
+    chart_codes={name[:-5] for name in chart_names if name.endswith('.json')}
+    required=priority_chart_codes(*reports)
+    if chart_codes!=codes:raise ValueError('Full market charts incomplete')
+    if extended.exists():
+        extended_names={p.name for p in extended.iterdir()}
+        if extended_names!={code+'.json.gz' for code in chart_codes}:raise ValueError('Missing or unexpected extended charts')
+    for code in sorted(chart_codes):
         candles=json.loads(checked_file(destination,charts/(code+'.json'),MAX_CHART).read_text())
         if not isinstance(candles,list) or not 1<=len(candles)<=120:raise ValueError('Invalid chart')
         dates=[bar['date'] for bar in candles]

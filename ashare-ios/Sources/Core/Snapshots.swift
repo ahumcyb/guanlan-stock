@@ -13,12 +13,18 @@ struct MobileManifest:Codable,Equatable {
     }
     func decodeReport(_ data:Data) throws -> Report {
         try validate()
-        guard data.count==reportBytes,SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined()==reportSha256 else { throw MobileFailure.invalidData }
+        guard data.count==reportBytes else { throw MobileFailure.invalidData }
+        let expected=reportSha256
+        let digest=SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined()
+        guard digest==expected else { throw MobileFailure.invalidData }
         let report=try mobileDecoder().decode(Report.self,from:data)
         guard report.schemaVersion==1,report.asOf==asOf,report.strategyId==strategy,report.dataRevision==dataRevision,
               report.stocks.count==stockCount,Set(report.stocks.map(\.id)).count==stockCount,
               report.stocks.allSatisfy({validStockCode($0.id) && $0.close>0 && (0...100).contains($0.score)}) else { throw MobileFailure.invalidData }
         return report
+    }
+    func verifyChecksum(_ data:Data) -> Bool {
+        data.count==reportBytes && SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined()==reportSha256
     }
 }
 
@@ -35,6 +41,10 @@ struct ServerStatus:Decodable {
     let reports:[String:MobileManifest]
     let marketStatus:MarketStatus?
     let marketProvider:String?
+    let revisions:ContentRevisions?
+}
+struct ContentRevisions:Decodable,Equatable {
+    let reports:String?;let daily:String?;let dailyJev:String?;let realtime:String?;let realtimeHistory:String?
 }
 
 struct MarketStatus:Codable {
@@ -122,6 +132,24 @@ final class OfflineCache {
             where file.lastPathComponent.hasSuffix("-report.json") && !protected.contains(file.lastPathComponent) { try? FileManager.default.removeItem(at:file) }
     }
     private func reportURL(_ manifest:MobileManifest)->URL { root.appendingPathComponent(manifest.strategy+"-"+manifest.generation+"-report.json") }
+    func stockDetailURL(_ manifest:MobileManifest,code:String) throws -> URL {
+        try manifest.validate();guard validStockCode(code) else { throw MobileFailure.invalidData }
+        return root.appendingPathComponent("stock-"+manifest.strategy+"-"+manifest.generation+"-"+code+".json")
+    }
+    func loadStockDetail(_ manifest:MobileManifest,code:String) throws -> Stock? {
+        let path=try stockDetailURL(manifest,code:code)
+        guard FileManager.default.fileExists(atPath:path.path) else { return nil }
+        let stock=try mobileDecoder().decode(Stock.self,from:Data(contentsOf:path))
+        guard stock.id==code else { throw MobileFailure.invalidData }
+        return stock
+    }
+    func saveStockDetail(_ data:Data,manifest:MobileManifest,code:String) throws -> Stock {
+        let stock=try mobileDecoder().decode(Stock.self,from:data)
+        guard stock.id==code,validStockCode(code) else { throw MobileFailure.invalidData }
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        try data.write(to:stockDetailURL(manifest,code:code),options:.atomic)
+        return stock
+    }
     func chartURL(_ manifest:MobileManifest,code:String) throws -> URL {
         try manifest.validate();guard validStockCode(code) else { throw MobileFailure.invalidData }
         return root.appendingPathComponent("chart-"+manifest.generation+"-"+code+".json")
@@ -215,8 +243,13 @@ func synchronizePublishedBundle(_ api:MobileAPI,cache:OfflineCache,manifests:[St
     let matching=current.map { (try? $0.validate()) != nil && $0.manifests==manifests } ?? false
     if changed || !matching {
         let complete=reports
+        // SHA-256 and decode stay off the main actor; UI keeps the last verified snapshot until this finishes.
         try await Task.detached(priority:.utility) { try cache.saveBundle(complete,manifests:manifests) }.value
     }
+}
+
+func loadVerifiedSnapshot(cache:OfflineCache,strategy:String) async throws -> CachedSnapshot? {
+    try await Task.detached(priority:.utility) { try cache.load(strategy) }.value
 }
 
 func decodeCandles(_ data:Data,asOf:String) throws -> [Candle] {

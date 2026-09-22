@@ -102,9 +102,21 @@ final class MobileAPI:@unchecked Sendable {
         }
         let allowed=(200..<300).contains(response.statusCode) ? limit:8192
         var data=Data()
-        for try await byte in bytes {
-            if data.count>=allowed { bytes.task.cancel();throw MobileFailure.oversized }
-            data.append(byte)
+        data.reserveCapacity(min(allowed,64*1024))
+        let chunkLimit=64*1024
+        var iterator=bytes.makeAsyncIterator()
+        var finished=false
+        while !finished {
+            try Task.checkCancellation()
+            var chunk=Data()
+            chunk.reserveCapacity(min(chunkLimit,max(0,allowed-data.count+1)))
+            while chunk.count<chunkLimit {
+                guard let byte=try await iterator.next() else { finished=true;break }
+                chunk.append(byte)
+            }
+            if chunk.isEmpty { break }
+            if data.count+chunk.count>allowed { bytes.task.cancel();throw MobileFailure.oversized }
+            data.append(chunk)
         }
         guard (200..<300).contains(response.statusCode) else {
             struct Envelope:Decodable { struct Item:Decodable { let message:String };let error:Item }

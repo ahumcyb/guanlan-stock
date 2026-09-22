@@ -7,7 +7,7 @@ mkdir -p "$GUANLAN_APP_DIR/Contents/MacOS" "$GUANLAN_APP_DIR/Contents/Resources"
 swiftc -O -parse-as-library -target arm64-apple-macosx14.0 \
   -framework SwiftUI -framework AppKit -framework Charts \
   macos/*.swift ../ashare-ios/Sources/UI/JevView.swift ../ashare-ios/Sources/Core/Connection.swift ../ashare-ios/Sources/Core/Snapshots.swift \
-  ../ashare-ios/Sources/Core/JevDaily.swift ../ashare-ios/Sources/Core/Watchlist.swift -o "$GUANLAN_APP_DIR/Contents/MacOS/Guanlan"
+  ../ashare-ios/Sources/Core/JevDaily.swift ../ashare-ios/Sources/Core/Watchlist.swift ../ashare-ios/Sources/Core/SearchIndex.swift -o "$GUANLAN_APP_DIR/Contents/MacOS/Guanlan"
 .venv/bin/python - <<'PY'
 import json,plistlib
 from pathlib import Path
@@ -15,7 +15,7 @@ root=Path.cwd(); app=root/'build'/'观澜选股.app'/'Contents'
 with (app/'Info.plist').open('wb') as f:
  plistlib.dump(dict(CFBundleName='观澜选股',CFBundleDisplayName='观澜选股',
   CFBundleIdentifier='local.guanlan.ashare',CFBundleExecutable='Guanlan',
-  CFBundlePackageType='APPL',CFBundleShortVersionString='1.13.1',CFBundleVersion='17',
+  CFBundlePackageType='APPL',CFBundleShortVersionString='1.14.0',CFBundleVersion='18',
   LSMinimumSystemVersion='14.0',NSHighResolutionCapable=True,
   NSHumanReadableCopyright='本地 A 股研究工具',
   NSAppTransportSecurity={'NSExceptionDomains':{'106.14.125.189':{
