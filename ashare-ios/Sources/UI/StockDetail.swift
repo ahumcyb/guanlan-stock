@@ -13,13 +13,14 @@ struct MobileStockDetail:View {
                         HStack { Text("\(stock.tsCode) · \(stock.industry)").font(.subheadline).foregroundStyle(.secondary);Spacer();StatePill(text:stock.state) }
                         HStack(alignment:.firstTextBaseline,spacing:12) { Text(decimal(stock.close)).font(.system(size:36,weight:.semibold,design:.rounded)).monospacedDigit();Text(String(format:"%+.2f%%",stock.change)).font(.headline).foregroundStyle(MobileTheme.change(stock.change)) }
                         Text("\(dateText(stock.tradeDate)) 收盘 · 匹配分 \(decimal(stock.score,digits:1))").font(.caption).foregroundStyle(.secondary)
+                        OpenInTonghuashunButton(tsCode: stock.tsCode).buttonStyle(.bordered).tint(MobileTheme.teal)
                     }
                 }
                 if stock.state=="入选",let review=store.selectedDailyJev,review.bound(to:manifest),let row=review.rows.first(where:{$0.tsCode==stock.id}) {
                     ResearchCard { VStack(alignment:.leading,spacing:10) { Text("JEV · 盘后精选判断").font(.headline);JevStockView(review:row) } }
                 }
                 ResearchCard {
-                    if let data=chart.data { MobileCandleChart(data:data,name:stock.name,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation) }
+                    if let data=chart.data { MobileCandleChart(data:data,name:stock.name,tsCode:stock.tsCode,signalDate:stock.tradeDate,signalLabel:stock.state=="入选" ? "本次入选":"观察日",reference:stock.support,invalidation:stock.invalidation) }
                     else if let error=chart.error { VStack(alignment:.leading,spacing:12) { Text(error).font(.subheadline).foregroundStyle(.secondary);Button("重试 K 线") { Task { await load() } } } }
                     else { ProgressView("正在读取 K 线…").frame(maxWidth:.infinity,minHeight:220) }
                 }

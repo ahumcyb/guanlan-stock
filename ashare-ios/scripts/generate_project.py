@@ -75,6 +75,7 @@ info['UTExportedTypeDeclarations']=[{'UTTypeIdentifier':'local.guanlan.connectio
 info['CFBundleDocumentTypes']=[{'CFBundleTypeName':'观澜连接','CFBundleTypeRole':'Viewer','LSHandlerRank':'Owner','LSItemContentTypes':['local.guanlan.connection']}]
 info['LSSupportsOpeningDocumentsInPlace']=True
 info['CFBundleURLTypes']=[{'CFBundleURLName':'local.guanlan.alerts','CFBundleURLSchemes':['guanlan']}]
+info['LSApplicationQueriesSchemes']=['amihexin']
 # iOS 17+ applies ATS to IP hosts. Permit this server's private CA evaluation;
 # Connection.swift still requires HTTPS, TLS 1.2+, a paired anchor and exact IP.
 info['NSAppTransportSecurity']={'NSExceptionDomains':{'106.14.125.189':{
