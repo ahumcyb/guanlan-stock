@@ -5,26 +5,18 @@ struct WorkspaceView:View {
     var favoritesOnly=false
     var onDaily:(()->Void)?=nil
     @State private var query=""
+    @State private var debouncedQuery=""
     @State private var filter="精选"
     @State private var order="匹配分"
     @State private var showStatistics=false
     @State private var showJev=false
+    @State private var searchTask:Task<Void,Never>?
+    private var searchIndex:StockSearchIndex { StockSearchIndex(stocks:store.report?.stocks ?? []) }
     private var filtered:[Stock] {
-        let text=query.trimmingCharacters(in:.whitespacesAndNewlines)
-        var rows=(store.report?.stocks ?? []).filter { stock in
-            let matches=text.isEmpty || [stock.name,stock.tsCode,stock.industry].contains(where:{$0.localizedCaseInsensitiveContains(text)})
-            let included = favoritesOnly ? store.favorites.contains(stock.id) :
-                (!text.isEmpty || filter=="全部" || (filter=="精选" && stock.state=="入选") ||
-                 (filter=="转强" && ["入选","转强","符合"].contains(stock.state)) || (filter=="等待" && stock.state=="等待"))
-            return matches && included
-        }
-        rows.sort { a,b in
-            if order=="涨跌幅" { return a.change==b.change ? a.id<b.id:a.change>b.change }
-            if order=="成交额" { return a.amount20==b.amount20 ? a.id<b.id:(a.amount20 ?? 0)>(b.amount20 ?? 0) }
-            return a.score==b.score ? a.id<b.id:a.score>b.score
-        }
-        return rows
+        let ids=searchIndex.matching(debouncedQuery)
+        return StockListFilter.apply(stocks:store.report?.stocks ?? [],favoritesOnly:favoritesOnly,favorites:store.favorites,filter:filter,queryIds:ids,sort:order)
     }
+    private var filteredIds:Set<String> { Set(filtered.map(\.id)) }
     var body:some View {
         HSplitView {
             VStack(alignment:.leading,spacing:0) {
@@ -52,13 +44,23 @@ struct WorkspaceView:View {
             }.frame(minWidth:460,idealWidth:620)
             if let selected=store.report?.stocks.first(where:{$0.id==store.selection}) {
                 StockDetail(stock:selected).frame(minWidth:360,idealWidth:500,maxWidth:.infinity)
+                    .id(selected.id)
             } else {
                 EmptyViewMessage(icon:"chart.xyaxis.line",title:"选择一只股票",message:"在左侧筛选或搜索，查看走势与入选依据。")
                     .frame(minWidth:360,idealWidth:500,maxWidth:.infinity).background(.white)
             }
         }
-        .onChange(of:filtered.map(\.id)) { _,ids in
-            if !ids.contains(store.selection ?? "") { store.select(ids.first) }
+        .onChange(of:debouncedQuery) { _,_ in
+            if let selection=store.selection,filteredIds.contains(selection) { return }
+            store.select(filtered.first?.id)
+        }
+        .onChange(of:filter) { _,_ in
+            if let selection=store.selection,filteredIds.contains(selection) { return }
+            store.select(filtered.first?.id)
+        }
+        .onChange(of:query) { _,value in
+            searchTask?.cancel()
+            searchTask=Task { try? await Task.sleep(for:.milliseconds(220));guard !Task.isCancelled else { return };debouncedQuery=value }
         }
         .onAppear { if !filtered.contains(where:{$0.id==store.selection}) { store.select(filtered.first?.id) } }
     }
@@ -127,7 +129,7 @@ struct WorkspaceView:View {
                     TextField("搜索代码、名称或行业",text:$query).textFieldStyle(.plain).font(.system(size:12))
                         .accessibilityLabel("搜索股票")
                     if !query.isEmpty {
-                        Button { query="" } label: { Image(systemName:"xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Palette.muted).accessibilityLabel("清空搜索")
+                        Button { query="";debouncedQuery="" } label: { Image(systemName:"xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Palette.muted).accessibilityLabel("清空搜索")
                     }
                 }.padding(10).background(.white,in:RoundedRectangle(cornerRadius:6))
                     .overlay(RoundedRectangle(cornerRadius:6).stroke(Palette.line,lineWidth:0.7))
@@ -137,14 +139,14 @@ struct WorkspaceView:View {
             if !favoritesOnly {
                 HStack(spacing:4) {
                     ForEach(["精选","转强","等待","全部"],id:\.self) { item in
-                        Button(item=="转强" && store.report?.conditionLabel==true ? "符合":item) { filter=item; query="" }
+                        Button(item=="转强" && store.report?.conditionLabel==true ? "符合":item) { filter=item; query="";debouncedQuery="" }
                             .buttonStyle(.plain).font(.system(size:11,weight:filter==item ? .semibold:.regular))
                             .padding(.horizontal,14).padding(.vertical,7)
                             .foregroundStyle(filter==item ? Palette.teal:Palette.muted)
                             .background(filter==item ? Palette.selected:Color.clear,in:RoundedRectangle(cornerRadius:5))
                     }
                     Spacer()
-                    Text(query.isEmpty ? (store.report?.isMomentum60==true ? "原始动量比值排序 · 最多 5 只":"同一行业最多 2 只精选"):"搜索范围：全部股票").font(.system(size:9)).foregroundStyle(Palette.muted)
+                    Text(debouncedQuery.isEmpty ? (store.report?.isMomentum60==true ? "原始动量比值排序 · 最多 5 只":"同一行业最多 2 只精选"):"搜索范围：全部股票").font(.system(size:9)).foregroundStyle(Palette.muted)
                 }
             }
         }.padding(.horizontal,24).padding(.bottom,16)
@@ -191,7 +193,7 @@ struct StockRow:View {
                 Text("\(stock.symbol)  ·  \(stock.industry)").font(.system(size:9)).foregroundStyle(Palette.muted).lineLimit(1)
             }.frame(maxWidth:.infinity,alignment:.leading)
             Text(decimal(stock.close)).frame(width:60,alignment:.trailing)
-            Text(String(format:"%+.2f%%",stock.change)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down).frame(width:66,alignment:.trailing)
+            Text(String(format:"%+.2f%%",stock.change)).foregroundStyle(Palette.change(stock.change)).frame(width:66,alignment:.trailing)
             Text(stock.eligible ? decimal(stock.score,digits:1):"—").fontWeight(.semibold).foregroundStyle(Palette.teal).frame(width:55,alignment:.trailing)
             Badge(text:stock.state,color:stock.state=="等待" ? Palette.amber:(stock.state=="排除" ? Palette.muted:Palette.teal)).frame(width:46,alignment:.trailing)
         }.font(.system(size:11,design:.rounded)).monospacedDigit().padding(.vertical,13)

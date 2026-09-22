@@ -62,25 +62,42 @@ class MobileAPITests(unittest.TestCase):
         atomic_json(state,{'status':'idle','message':'ready','secret':'not public'})
         with self.assertRaises(ValueError):self.call('GET','/v1/status')
 
-    def test_same_date_but_changed_charts_cannot_mix_strategies(self):
-        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        chart=outputs/'pullback/20260905T120000-abcdef/charts/000001.SZ.json'
-        chart.write_text('[{"date":"20260904","close":999}]')
-        with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        self.assertEqual(current_manifest(self.root,'leaders'),first['leaders'])
-
     def test_unbound_market_revision_and_non_uuid_requests_are_rejected(self):
         with self.assertRaises(ValueError):publish(self.outputs(),self.root,'20260904-bbbbbbbbbbbbbbbb')
         with self.assertRaises(Failure):self.call('POST','/v1/jobs',{'action':'refresh','request_id':'-'*36})
 
     def outputs(self):
         outputs=self.root/'outputs'
+        stock={'ts_code':'000001.SZ','name':'平安银行','industry':'银行','trade_date':'20260904','close':10.0,
+               'change':1.2,'score':88.0,'state':'入选','rank':1,'eligible':True,'stale':False,'adjusted':True,'limit_available':True}
         for strategy in ['leaders','pullback','golden_pit','left_rebound','orderflow']:
-            folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True)
-            report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[{'ts_code':'000001.SZ'}],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
+            folder=outputs/strategy/'20260905T120000-abcdef';(folder/'charts').mkdir(parents=True,exist_ok=True);(folder/'details').mkdir(exist_ok=True)
+            report={'schema_version':1,'strategy_id':strategy,'as_of':'20260904','data_revision':'20260904-aaaaaaaaaaaaaaaa','source_root':'/private/source','overlay_root':'/private/overlay','stocks':[dict(stock)],'backtest':{'events':[{'event':'large'}],'horizons':[1,3,5]}}
             atomic_json(folder/'report.json',report);atomic_json(folder/'charts/000001.SZ.json',[{'date':'20260904'}])
+            atomic_json(folder/'details/000001.SZ.json',dict(stock,trend_ok=True,strength_ok=True,pullback_ok=True,volume_ok=True,turn_ok=True))
             atomic_json(outputs/strategy/'current.json',{'generation':folder.name,'sha256':hashlib.sha256((folder/'report.json').read_bytes()).hexdigest()})
         return outputs
+
+    def test_shared_charts_are_not_byte_compared_across_strategies(self):
+        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        chart=outputs/'pullback/20260905T120000-abcdef/charts/000001.SZ.json'
+        chart.write_text('[{"date":"20260904","close":999}]')
+        # Shared charts come from the first strategy folder; diverging siblings no longer block publish.
+        second=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
+        self.assertNotEqual(first['leaders']['generation'],second['leaders']['generation'])
+
+    def test_publish_without_waiting_for_orderflow_then_patch(self):
+        outputs=self.outputs()
+        from mobile_server.artifacts import PREVIOUS_STRATEGIES,patch_orderflow
+        first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa',strategies=PREVIOUS_STRATEGIES)
+        self.assertEqual(set(first),set(PREVIOUS_STRATEGIES))
+        self.assertFalse((self.root/'releases'/first['leaders']['generation']/'orderflow').exists())
+        patched=patch_orderflow(outputs/'orderflow',self.root,first['leaders']['generation'],'20260904-aaaaaaaaaaaaaaaa')
+        self.assertEqual(patched['strategy'],'orderflow')
+        self.assertEqual(patched['generation'],first['leaders']['generation'])
+        self.assertTrue((self.root/'releases'/first['leaders']['generation']/'orderflow/report.json').exists())
+        stock=self.call('GET',f"/v1/reports/orderflow/{patched['generation']}/stocks/000001.SZ.json")[1]
+        self.assertEqual(json.loads(stock.read_text())['ts_code'],'000001.SZ')
 
     def test_published_snapshots_are_pinned_and_private_paths_removed(self):
         published=publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')
@@ -90,6 +107,7 @@ class MobileAPITests(unittest.TestCase):
         report=json.loads(path.read_text())
         self.assertNotIn('/private',path.read_text());self.assertNotIn('events',report['backtest'])
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),manifest['report_sha256'])
+        self.assertEqual(set(report['stocks'][0]),{'ts_code','name','industry','trade_date','close','change','score','state','rank','eligible','stale','adjusted','limit_available'})
 
     def test_bad_second_strategy_cannot_replace_previous_snapshot(self):
         outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
@@ -103,22 +121,11 @@ class MobileAPITests(unittest.TestCase):
         path.unlink();path.symlink_to(self.root/'jobs/capabilities.json')
         with self.assertRaises(ValueError):self.call('GET',f"/v1/reports/leaders/{manifest['generation']}/charts/000001.SZ.json")
 
-    def test_golden_pit_is_served_and_its_chart_must_match(self):
-        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        manifest=self.call('GET','/v1/reports/golden_pit/current')[1]
-        self.assertEqual(manifest['generation'],first['leaders']['generation'])
-        chart=outputs/'golden_pit/20260905T120000-abcdef/charts/000001.SZ.json'
-        chart.write_text('[{"date":"20260904","close":999}]')
-        with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        self.assertEqual(current_manifest(self.root,'golden_pit'),first['golden_pit'])
-
-    def test_momentum_is_served_and_bad_fourth_chart_preserves_current(self):
-        outputs=self.outputs();first=publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        manifest=self.call('GET','/v1/reports/left_rebound/current')[1]
-        self.assertEqual(manifest['generation'],first['leaders']['generation'])
-        (outputs/'left_rebound/20260905T120000-abcdef/charts/000001.SZ.json').write_text('[]')
-        with self.assertRaises(ValueError):publish(outputs,self.root,'20260904-aaaaaaaaaaaaaaaa')
-        self.assertEqual(current_manifest(self.root,'left_rebound'),first['left_rebound'])
+    def test_status_includes_content_revisions_for_fetch_on_change(self):
+        publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')
+        status=self.call('GET','/v2/status')[1]
+        self.assertIn('revisions',status)
+        self.assertEqual(status['revisions']['reports'],status['reports']['leaders']['generation'])
 
     def test_old_release_remains_readable_before_fourth_strategy_is_published(self):
         publish(self.outputs(),self.root,'20260904-aaaaaaaaaaaaaaaa')

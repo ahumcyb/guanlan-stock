@@ -20,7 +20,7 @@ struct StockDetail: View {
                 }
                 HStack(alignment:.firstTextBaseline,spacing:10) {
                     Text(decimal(stock.close)).font(.system(size:30,weight:.medium,design:.rounded)).monospacedDigit()
-                    Text(String(format:"%+.2f%%",stock.change)).font(.system(size:13,weight:.medium)).foregroundStyle(stock.change>=0 ? Palette.up:Palette.down)
+                    Text(String(format:"%+.2f%%",stock.change)).font(.system(size:13,weight:.medium)).foregroundStyle(Palette.change(stock.change))
                     Spacer(); Badge(text:stock.state)
                 }
                 if stock.stale { Badge(text:"行情停留在 \(dateText(stock.tradeDate))",color:Palette.amber) }
@@ -40,11 +40,11 @@ struct StockDetail: View {
                 }
                 VStack(spacing:9) {
                     if store.report?.isMomentum60==true {
-                        condition("中期趋势",detail:"收盘高于 MA60",ok:stock.trendOk)
-                        condition("六十日收益",detail:percent(stock.ret60),ok:stock.strengthOk)
-                        condition("成交活跃",detail:"20 日均额前 40%",ok:stock.volumeOk)
-                        condition("波动完整",detail:"60 日日波动 \(percent(stock.vol60))",ok:stock.pullbackOk)
-                        condition("当日克制",detail:"当日涨幅 ≤5%",ok:stock.turnOk)
+                        condition("中期趋势",detail:"收盘高于 MA60",ok:stock.trendPassed)
+                        condition("六十日收益",detail:percent(stock.ret60),ok:stock.strengthPassed)
+                        condition("成交活跃",detail:"20 日均额前 40%",ok:stock.volumePassed)
+                        condition("波动完整",detail:"60 日日波动 \(percent(stock.vol60))",ok:stock.pullbackPassed)
+                        condition("当日克制",detail:"当日涨幅 ≤5%",ok:stock.turnPassed)
                         Text("原始动量比值 \(decimal(stock.momentumRatio)) · 分数为候选内排名，不是胜率")
                             .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
                     } else if store.report?.isOrderflow==true {
@@ -55,32 +55,32 @@ struct StockDetail: View {
                             Text("尾盘成交量占比 " + (stock.flowLateVolume.map { String(format:"%.1f%%",$0*100) } ?? "—"))
                         }.font(.caption)
                     } else if store.report?.isLeft==true {
-                        condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))",ok:stock.trendOk)
-                        condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))",ok:stock.strengthOk)
-                        condition("低位区域",detail:"60 日回撤 \(percent(stock.leftDrawdown60))",ok:stock.pullbackOk)
-                        condition("量能收敛",detail:"当日 / 前五日均量 \(decimal(stock.leftVolume5))",ok:stock.volumeOk)
-                        condition("抛压收敛",detail:"未急跌、未追涨且未封跌停",ok:stock.turnOk)
+                        condition("中期约束",detail:"MA60 十日变化 \(percent(stock.leftMa60Slope10))",ok:stock.trendPassed)
+                        condition("短期超跌",detail:"RSI5 \(decimal(stock.leftRsi5))",ok:stock.strengthPassed)
+                        condition("低位区域",detail:"60 日回撤 \(percent(stock.leftDrawdown60))",ok:stock.pullbackPassed)
+                        condition("量能收敛",detail:"当日 / 前五日均量 \(decimal(stock.leftVolume5))",ok:stock.volumePassed)
+                        condition("抛压收敛",detail:"未急跌、未追涨且未封跌停",ok:stock.turnPassed)
                         Text("距20日低价 \(percent(stock.leftDistanceLow20)) · 左侧观察，尚未要求收复均线")
                             .font(.system(size:10)).foregroundStyle(Palette.muted)
                     } else if store.report?.isGoldenPit==true {
-                        condition("长期趋势",detail:"MA60 五日变化 \(percent(stock.ma60Slope))",ok:stock.trendOk)
-                        condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",ok:stock.strengthOk)
-                        condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",ok:stock.pullbackOk)
-                        condition("坑底缩量",detail:"底部 / 峰顶均额 \(decimal(stock.pitContraction))",ok:stock.volumeOk)
-                        condition("右侧确认",detail:"今日 / 前五日均额 \(decimal(stock.pitRecoveryVolume))",ok:stock.turnOk)
+                        condition("长期趋势",detail:"MA60 五日变化 \(percent(stock.ma60Slope))",ok:stock.trendPassed)
+                        condition("前期上涨",detail:"60 日涨幅 \(percent(stock.ret60))",ok:stock.strengthPassed)
+                        condition("坑形修复",detail:"坑深 \(percent(stock.pitDepth)) · 反弹 \(percent(stock.pitRebound))",ok:stock.pullbackPassed)
+                        condition("坑底缩量",detail:"底部 / 峰顶均额 \(decimal(stock.pitContraction))",ok:stock.volumePassed)
+                        condition("右侧确认",detail:"今日 / 前五日均额 \(decimal(stock.pitRecoveryVolume))",ok:stock.turnPassed)
                         Text("高点 \(dateText(stock.pitPeakDate ?? "—")) → 低点 \(dateText(stock.pitTroughDate ?? "—")) · 距低点 \(decimal(stock.pitAge,digits:0)) 日")
                             .font(.system(size:10)).foregroundStyle(Palette.muted).frame(maxWidth:.infinity,alignment:.leading)
                     } else {
-                    condition("趋势向上", detail:"收盘 > MA20 > MA60", ok:stock.trendOk)
-                    condition("相对强势", detail:"20 日强度前 \(decimal((1-(stock.rs20 ?? 0))*100,digits:0))%", ok:stock.strengthOk)
+                    condition("趋势向上", detail:"收盘 > MA20 > MA60", ok:stock.trendPassed)
+                    condition("相对强势", detail:"20 日强度前 \(decimal((1-(stock.rs20 ?? 0))*100,digits:0))%", ok:stock.strengthPassed)
                     if store.report?.isLeaders==true {
-                        condition("位置克制",detail:"高于 MA20 \(percent(stock.extension))",ok:stock.pullbackOk)
-                        condition("成交活跃",detail:"成交额前 \(decimal((1-(stock.liquidityRank ?? 0))*100,digits:0))%",ok:stock.volumeOk)
-                        condition("短期延续",detail:"收盘 ≥ MA10 且未急涨",ok:stock.turnOk)
+                        condition("位置克制",detail:"高于 MA20 \(percent(stock.extension))",ok:stock.pullbackPassed)
+                        condition("成交活跃",detail:"成交额前 \(decimal((1-(stock.liquidityRank ?? 0))*100,digits:0))%",ok:stock.volumePassed)
+                        condition("短期延续",detail:"收盘 ≥ MA10 且未急涨",ok:stock.turnPassed)
                     } else {
-                        condition("回踩到位", detail:"距十日高点 \(percent(stock.pullback))", ok:stock.pullbackOk)
-                        condition("量能收缩", detail:"三日 / 二十日 \(decimal(stock.volumeRatio))", ok:stock.volumeOk)
-                        condition("收盘转强", detail:"上涨且收于日内较高处", ok:stock.turnOk)
+                        condition("回踩到位", detail:"距十日高点 \(percent(stock.pullback))", ok:stock.pullbackPassed)
+                        condition("量能收缩", detail:"三日 / 二十日 \(decimal(stock.volumeRatio))", ok:stock.volumePassed)
+                        condition("收盘转强", detail:"上涨且收于日内较高处", ok:stock.turnPassed)
                     }
                     }
                 }

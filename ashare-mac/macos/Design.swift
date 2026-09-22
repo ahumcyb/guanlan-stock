@@ -10,6 +10,8 @@ enum Palette {
     static let up=Color(red:0.79,green:0.26,blue:0.23)
     static let down=Color(red:0.13,green:0.52,blue:0.39)
     static let amber=Color(red:0.66,green:0.44,blue:0.14)
+    /// 红涨绿跌；零涨跌用中性色，不算上涨红。
+    static func change(_ value:Double)->Color { value>0 ? up:(value<0 ? down:muted) }
 }
 
 struct Badge: View {

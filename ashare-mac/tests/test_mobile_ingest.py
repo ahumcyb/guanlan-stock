@@ -38,7 +38,9 @@ class IngestTests(unittest.TestCase):
         entries['bundle.json']=json.dumps(metadata).encode()
         for strategy in ['leaders','pullback','golden_pit','left_rebound','orderflow']:
             report=json.dumps({'schema_version':1,'strategy_id':strategy,'as_of':'20260904',
-                'data_revision':manifest['revision'],'stocks':[{'ts_code':'000001.SZ'}]}).encode()
+                'data_revision':manifest['revision'],'stocks':[{'ts_code':'000001.SZ','name':'测试','industry':'银行',
+                'trade_date':'20260904','close':10.0,'change':0.0,'score':1.0,'state':'入选','rank':1,
+                'eligible':True,'stale':False,'adjusted':True,'limit_available':True}]}).encode()
             entries[f'research/{strategy}/report.json']=report
             entries[f'research/{strategy}/manifest.json']=json.dumps({'schema_version':1,'strategy':strategy,
                 'generation':metadata['generation'],'as_of':'20260904','data_revision':manifest['revision'],

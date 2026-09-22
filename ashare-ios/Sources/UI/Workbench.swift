@@ -4,26 +4,15 @@ struct Workbench:View {
     @EnvironmentObject var store:MobileStore
     var favoritesOnly=false
     @State private var query=""
+    @State private var debouncedQuery=""
     @State private var filter="精选"
     @State private var sort="匹配分"
     @State private var exportURL:URL?
+    @State private var searchTask:Task<Void,Never>?
+    private var searchIndex:StockSearchIndex { StockSearchIndex(stocks:store.report?.stocks ?? []) }
     private var stocks:[Stock] {
-        var rows=store.report?.stocks ?? []
-        if favoritesOnly { rows=rows.filter{store.favorites.contains($0.id)} }
-        else if query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
-            switch filter {
-            case "精选":rows=rows.filter{$0.state=="入选"}
-            case "转强":rows=rows.filter{["入选","转强","符合"].contains($0.state)}
-            case "等待":rows=rows.filter{$0.state=="等待"}
-            default:break
-            }
-        }
-        let needle=query.trimmingCharacters(in:.whitespacesAndNewlines)
-        if !needle.isEmpty { rows=rows.filter{[$0.name,$0.tsCode,$0.industry].contains{$0.localizedCaseInsensitiveContains(needle)}} }
-        return rows.sorted { a,b in
-            if sort=="涨跌幅" { return a.change==b.change ? a.id<b.id:a.change>b.change }
-            return a.score==b.score ? a.id<b.id:a.score>b.score
-        }
+        let ids=searchIndex.matching(debouncedQuery)
+        return StockListFilter.apply(stocks:store.report?.stocks ?? [],favoritesOnly:favoritesOnly,favorites:store.favorites,filter:filter,queryIds:ids,sort:sort)
     }
     var body:some View {
         NavigationStack {
@@ -111,12 +100,12 @@ struct Workbench:View {
                             }.listRowSeparator(.hidden)
                         }
                         Section {
-                            ForEach(stocks) { stock in
+                            ForEach(stocks,id:\.id) { stock in
                                 NavigationLink { MobileStockDetail(stock:stock,manifest:manifest) } label: { StockRow(stock:stock) }
                                     .swipeActions { Button { store.toggleFavorite(stock) } label: { Label(store.favorites.contains(stock.id) ? "移出观察":"加入观察",systemImage:"star") }.tint(MobileTheme.teal) }
                             }
                             if stocks.isEmpty { EmptyMessage(title:favoritesOnly ? "建立你的观察列表":(store.report?.orderflowIncomplete==true ? "大单数据未完成":"没有符合条件的股票"),text:favoritesOnly ? "在股票详情点星标，或向左轻扫股票加入观察。":"可以切换筛选条件或搜索名称、代码和行业。",icon:"magnifyingglass").listRowSeparator(.hidden) }
-                        } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? store.favoritesMessage:(!query.isEmpty ? "搜索范围：全部股票":"每行业最多 2 只精选")) } }
+                        } header: { HStack { Text("\(stocks.count) 只股票");Spacer();Text(favoritesOnly ? store.favoritesMessage:(!debouncedQuery.isEmpty ? "搜索范围：全部股票":"每行业最多 2 只精选")) } }
                         Section { Text("研究规则尚未证明稳定优势；匹配分不代表胜率。").font(.caption).foregroundStyle(.secondary) }.listRowSeparator(.hidden)
                     }.listStyle(.plain).refreshable { await store.synchronize() }
                 } else {
@@ -130,6 +119,10 @@ struct Workbench:View {
             }
             .navigationTitle(favoritesOnly ? "我的观察":"观澜")
             .searchable(text:$query,prompt:"代码、名称或行业")
+            .onChange(of:query) { _,value in
+                searchTask?.cancel()
+                searchTask=Task { try? await Task.sleep(for:.milliseconds(220));guard !Task.isCancelled else { return };debouncedQuery=value }
+            }
             .toolbar {
                 ToolbarItem(placement:.primaryAction) {
                     Menu {

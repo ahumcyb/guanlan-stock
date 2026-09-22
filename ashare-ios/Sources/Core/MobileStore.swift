@@ -39,6 +39,7 @@ import Combine
     private var operation:UUID?
     private var historyOperation:UUID?
     private let realtimeReader:((String,Int) async throws -> Data)?
+    private var lastRevisions:ContentRevisions?
     var report:Report? { snapshot?.report }
 
     init(storageRoot:URL?=nil,startAutomatically:Bool=true,realtimeReader:((String,Int) async throws -> Data)?=nil) {
@@ -54,9 +55,14 @@ import Combine
         } catch { favoritesMessage="自选缓存未通过校验，原有观察列表已保留" }
         if startAutomatically { do {
             if let pairing=try CredentialStore.load() { api=try MobileAPI(pairing);connected=true }
-            snapshot=try cache.load(strategy)
-            if let m=snapshot?.manifest { dailyJev=cachedDailyJev(cache.root,m) }
-            if snapshot != nil { message="已载入上次同步结果" }
+            // Keep UI free: short-list decode + SHA stay off the main actor.
+            let strategyChoice=strategy;let cacheRoot=cache
+            Task {
+                if let saved=try? await loadVerifiedSnapshot(cache:cacheRoot,strategy:strategyChoice) {
+                    if snapshot==nil { snapshot=saved;message="已载入上次同步结果" }
+                    if let m=saved.manifest { dailyJev=cachedDailyJev(cacheRoot.root,m) }
+                }
+            }
         } catch { self.error="上次连接或缓存读取失败，请重新导入配置。" } }
         #if DEBUG
         let inbox=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask).first!.appendingPathComponent("Pairing.guanlan")
@@ -84,9 +90,13 @@ import Combine
     func changeStrategy(_ value:String) {
         guard !busy,AfterCloseStrategies.ids.contains(value),value != strategy else { return }
         strategy=value;UserDefaults.standard.set(value,forKey:"mobileStrategy")
-        snapshot=try? cache.load(value)
-        if let m=snapshot?.manifest { dailyJev=cachedDailyJev(cache.root,m) }
-        Task { await synchronize() }
+        Task {
+            if let saved=try? await loadVerifiedSnapshot(cache:cache,strategy:value) {
+                snapshot=saved
+                if let m=saved.manifest { dailyJev=cachedDailyJev(cache.root,m) }
+            } else { snapshot=nil }
+            await synchronize()
+        }
     }
     func synchronize() async {
         guard let api,!busy else { return }
@@ -94,12 +104,16 @@ import Combine
         defer { if operation==id { busy=false } }
         do {
             let selected=strategy
-            let server=try mobileDecoder().decode(ServerStatus.self,from:await api.request("/v2/status",limit:65536));status=server
+            let server=try mobileDecoder().decode(ServerStatus.self,from:await api.request("/v2/status",limit:65536))
+            if status?.job.id != server.job.id || status?.job.status != server.job.status || status?.reports != server.reports { status=server }
+            lastRevisions=server.revisions
             try await synchronizePublishedBundle(api,cache:cache,manifests:server.reports)
             guard operation==id,strategy==selected else { return }
-            snapshot=try cache.load(selected)
-            guard let manifest=snapshot?.manifest else { throw MobileFailure.invalidData }
-            message="已同步 \(dateText(manifest.asOf)) 收盘结果"
+            if let saved=try await loadVerifiedSnapshot(cache:cache,strategy:selected) {
+                snapshot=saved
+                guard let manifest=saved.manifest else { throw MobileFailure.invalidData }
+                message="已同步 \(dateText(manifest.asOf)) 收盘结果"
+            } else { throw MobileFailure.invalidData }
         } catch is CancellationError { message="同步已取消，保留原有结果" }
         catch { self.error=error.localizedDescription;message=snapshot == nil ? "同步未完成":"离线缓存可继续使用" }
         await refreshStatus()
@@ -142,11 +156,17 @@ import Combine
     func watchJob() async {
         while !Task.isCancelled {
             await refreshStatus()
-            await refreshRealtime()
-            await refreshDaily()
-            await refreshDailyJev()
+            let revisions=status?.revisions
+            let reportsChanged=status?.reports[strategy] != snapshot?.manifest || revisions?.reports != lastRevisions?.reports
+            let dailyChanged=revisions?.daily != lastRevisions?.daily
+            let realtimeChanged=revisions?.realtime != lastRevisions?.realtime
+            let historyChanged=revisions?.realtimeHistory != lastRevisions?.realtimeHistory
+            if reportsChanged,!busy { await synchronize() }
+            if dailyChanged { await refreshDaily();await refreshDailyJev() }
+            if realtimeChanged { await refreshRealtime() }
+            if historyChanged { await refreshRealtimeHistory() }
+            lastRevisions=revisions ?? lastRevisions
             await syncFavorites()
-            if !busy,let manifest=status?.reports[strategy],manifest != snapshot?.manifest { await synchronize() }
             if status?.job.status=="failed" { error=status?.job.message }
             do { try await Task.sleep(for:.seconds(status?.job.active==true ? 3:20)) }
             catch { return }
@@ -158,8 +178,20 @@ import Combine
             let data=try await readRealtime("/v1/realtime",limit:2*1024*1024)
             let value=try mobileDecoder().decode(RealtimeState.self,from:data)
             guard value.schemaVersion==1,value.events.count<=30 else { throw MobileFailure.invalidData }
-            realtime=value;realtimeMessage=value.running ? "正在检查实时行情":"已同步实时提醒状态"
+            if !sameRealtime(realtime,value) {
+                realtime=value
+            }
+            realtimeMessage=value.running ? "正在检查实时行情":"已同步实时提醒状态"
         } catch { realtimeMessage="实时服务暂未连接；请下拉刷新，已有研究结果仍可使用。" }
+    }
+    private func sameRealtime(_ lhs:RealtimeState?,_ rhs:RealtimeState)->Bool {
+        guard let lhs else { return false }
+        return lhs.running==rhs.running && lhs.executor==rhs.executor && lhs.macOnline==rhs.macOnline
+            && lhs.serverOnline==rhs.serverOnline && lhs.settings.enabled==rhs.settings.enabled
+            && lhs.latest?.slot==rhs.latest?.slot && lhs.latest?.generatedAt==rhs.latest?.generatedAt
+            && lhs.lastScreen?.slot==rhs.lastScreen?.slot && lhs.lastScreen?.generatedAt==rhs.lastScreen?.generatedAt
+            && lhs.lastBottom?.slot==rhs.lastBottom?.slot && lhs.lastFlow?.slot==rhs.lastFlow?.slot
+            && lhs.events.map(\.id)==rhs.events.map(\.id)
     }
     func realtimeAction(_ action:String,values:[String:Any]=[:]) async {
         guard let api,!realtimeBusy,["settings","test","scan","jev"].contains(action) else { return }
@@ -286,6 +318,13 @@ import Combine
     }
     func chartData(_ manifest:MobileManifest,code:String) async throws -> ChartDataset {
         try await requestChartDataset(manifest:manifest,code:code,cache:cache,api:api)
+    }
+    func stockDetail(_ manifest:MobileManifest,code:String) async throws -> Stock {
+        if let saved=try? cache.loadStockDetail(manifest,code:code) { return saved }
+        guard let api else { throw MobileFailure.server("连接服务器后可下载这只股票的条件明细。") }
+        guard validStockCode(code) else { throw MobileFailure.invalidData }
+        let data=try await api.request("/v1/reports/\(manifest.strategy)/\(manifest.generation)/stocks/\(code).json",limit:65536)
+        return try cache.saveStockDetail(data,manifest:manifest,code:code)
     }
     func chartData(code:String,through:String?) async throws -> ChartDataset {
         try await latestChartDataset(code:code,through:through,cache:cache,api:api,fallback:snapshot?.manifest)

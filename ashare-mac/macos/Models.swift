@@ -40,7 +40,7 @@ struct Stock: Decodable, Identifiable, Hashable {
     let ret20: Double?; let rs20: Double?; let atr: Double?; let volumeRatio: Double?
     let pullback: Double?; let `extension`: Double?; let amount20: Double?
     let support: Double?; let breakout: Double?; let invalidation: Double?
-    let trendOk: Bool; let strengthOk: Bool; let pullbackOk: Bool; let volumeOk: Bool; let turnOk: Bool
+    let trendOk: Bool?; let strengthOk: Bool?; let pullbackOk: Bool?; let volumeOk: Bool?; let turnOk: Bool?
     let strengthScore: Double?; let trendScore: Double?; let positionScore: Double?
     let volumeScore: Double?; let riskScore: Double?
     let liquidityRank: Double?
@@ -55,6 +55,11 @@ struct Stock: Decodable, Identifiable, Hashable {
     let flowLateReturn:Double?;let flowLateVolume:Double?
     var id: String { tsCode }
     var symbol: String { String(tsCode.prefix(6)) }
+    var trendPassed:Bool { trendOk == true }
+    var strengthPassed:Bool { strengthOk == true }
+    var pullbackPassed:Bool { pullbackOk == true }
+    var volumePassed:Bool { volumeOk == true }
+    var turnPassed:Bool { turnOk == true }
 }
 struct Candle: Decodable, Identifiable {
     let date: String; let open: Double; let high: Double; let low: Double; let close: Double

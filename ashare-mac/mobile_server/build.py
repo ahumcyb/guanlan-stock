@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from engine.snapshot_protocol import validate_manifest
 from engine.close_proof import valid_date,verify_package_close
-from .artifacts import STRATEGIES,publish,atomic_json
+from .artifacts import PREVIOUS_STRATEGIES,STRATEGIES,publish,patch_orderflow,priority_chart_codes,atomic_json,read_generation
 
 
 def build(root,overlay,work,action,expected_as_of=None):
@@ -38,12 +38,29 @@ def build(root,overlay,work,action,expected_as_of=None):
     empty=work/'report-overlay';empty.mkdir(exist_ok=True)
     if (overlay/'last_update.json').is_file():atomic_json(empty/'last_update.json',json.loads((overlay/'last_update.json').read_text()))
     outputs=work/'reports'
-    for strategy in STRATEGIES:
-        run('engine.cli','--data-root',market,'--overlay',empty,'--output',outputs/strategy,'--strategy',strategy)
-    manifests=publish(outputs,work/'mobile',revision)
+    # Four strategies first; leaders writes the shared priority chart set once.
+    for strategy in PREVIOUS_STRATEGIES:
+        charts='priority' if strategy=='leaders' else 'none'
+        run('engine.cli','--data-root',market,'--overlay',empty,'--output',outputs/strategy,'--strategy',strategy,'--charts',charts)
+    reports=[]
+    for strategy in PREVIOUS_STRATEGIES:
+        _,report=read_generation(outputs/strategy);reports.append(report)
+    chart_codes=priority_chart_codes(*reports)
+    leaders_folder,_=read_generation(outputs/'leaders')
+    manifests=publish(outputs,work/'mobile',revision,strategies=PREVIOUS_STRATEGIES,
+                      charts_root=leaders_folder/'charts',chart_codes=chart_codes)
+    generation=manifests['leaders']['generation']
+    # Orderflow is a same-version patch; never block the published pointer on it.
+    orderflow_attached=False
+    try:
+        run('engine.cli','--data-root',market,'--overlay',empty,'--output',outputs/'orderflow','--strategy','orderflow','--charts','none')
+        manifests['orderflow']=patch_orderflow(outputs/'orderflow',work/'mobile',generation,revision)
+        orderflow_attached=True
+    except Exception as error:
+        print(f'大单承接稍后补丁：{error}',flush=True)
     if expected_as_of and any(m['as_of']!=expected_as_of for m in manifests.values()):
         raise ValueError('Closing strategy dates differ')
-    generation=manifests['leaders']['generation'];research=work/'mobile/releases'/generation
+    research=work/'mobile/releases'/generation
     bundle=work/'bundle.zip';temporary=work/'.bundle.zip'
     with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=4) as archive:
         metadata={'schema_version':1,'input_revision':source['revision'],'data_revision':revision,'generation':generation}
@@ -54,7 +71,9 @@ def build(root,overlay,work,action,expected_as_of=None):
                 if path.is_file() and not path.is_symlink():archive.write(path,prefix+'/'+path.relative_to(folder).as_posix())
     if temporary.stat().st_size>256*1024*1024:raise ValueError('Mobile bundle exceeds transfer limit')
     os.replace(temporary,bundle)
-    print(f'{len(STRATEGIES)} 套盘后策略已生成，待上传结果包 {bundle.stat().st_size/1024/1024:.1f} MiB',flush=True)
+    count=len(manifests)
+    note='（含大单补丁）' if orderflow_attached else '（大单待后续补丁）'
+    print(f'{count} 套盘后策略已生成{note}，待上传结果包 {bundle.stat().st_size/1024/1024:.1f} MiB',flush=True)
     return bundle
 
 

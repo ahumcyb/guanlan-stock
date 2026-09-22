@@ -30,6 +30,7 @@ import UniformTypeIdentifiers
     var publishedAPI:MobileAPI?
     var publishedSnapshot:CachedSnapshot?
     var favoriteReplica:WatchlistReplica?
+    var lastContentRevisions:ContentRevisions?
     let publishedCache:OfflineCache
     var publishedMode:Bool { !localResearch && publishedAPI != nil }
     let runtime: Runtime

@@ -7,7 +7,7 @@ mkdir -p "$GUANLAN_APP_DIR/Contents/MacOS" "$GUANLAN_APP_DIR/Contents/Resources"
 swiftc -O -parse-as-library -target arm64-apple-macosx14.0 \
   -framework SwiftUI -framework AppKit -framework Charts \
   macos/*.swift ../ashare-ios/Sources/UI/JevView.swift ../ashare-ios/Sources/Core/Connection.swift ../ashare-ios/Sources/Core/Snapshots.swift \
-  ../ashare-ios/Sources/Core/JevDaily.swift ../ashare-ios/Sources/Core/Watchlist.swift -o "$GUANLAN_APP_DIR/Contents/MacOS/Guanlan"
+  ../ashare-ios/Sources/Core/JevDaily.swift ../ashare-ios/Sources/Core/Watchlist.swift ../ashare-ios/Sources/Core/SearchIndex.swift -o "$GUANLAN_APP_DIR/Contents/MacOS/Guanlan"
 .venv/bin/python - <<'PY'
 import json,plistlib
 from pathlib import Path
