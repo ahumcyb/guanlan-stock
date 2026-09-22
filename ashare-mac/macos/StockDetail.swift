@@ -114,7 +114,10 @@ struct StockDetail: View {
             do {
                 let loaded=try await store.stockDetail(code:stock.id)
                 if store.publishedSnapshot?.manifest==manifest && stock.id==loaded.id { detail=loaded }
-            } catch { if store.publishedSnapshot?.manifest==manifest { detailError=true } }
+            } catch { if store.publishedSnapshot?.manifest==manifest {
+                if stock.atr != nil || stock.ret20 != nil || stock.support != nil { detail=stock;detailError=false }
+                else { detailError=true }
+            } }
         }
     }
     private func condition(_ title:String,detail:String,ok:Bool)->some View {

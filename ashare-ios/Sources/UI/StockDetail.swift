@@ -91,7 +91,8 @@ struct MobileStockDetail:View {
     }
     private func load() async {
         do { detail=try await store.stockDetail(manifest,code:stock.id);detailError=false }
-        catch { detailError=true }
+        catch { if stock.atr != nil || stock.ret20 != nil || stock.support != nil { detail=stock;detailError=false }
+                else { detailError=true } }
         await chart.load(key:manifest.generation+stock.id) { try await store.chartData(manifest,code:stock.id) }
     }
     private func condition(_ title:String,detail:String,passed:Bool)->some View {
