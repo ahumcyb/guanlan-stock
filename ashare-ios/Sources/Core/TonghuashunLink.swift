@@ -17,6 +17,15 @@ enum TonghuashunLink {
         return components.url?.absoluteString
     }
 
+    static func searchCode(tsCode: String) -> String? {
+        guard tsCode.range(of: "^\\d{6}\\.(SH|SZ|BJ)$", options:.regularExpression) != nil else { return nil }
+        let code=String(tsCode.prefix(6)), market=String(tsCode.suffix(2))
+        guard (market=="SH" && code.hasPrefix("6")) ||
+              (market=="SZ" && (code.hasPrefix("0") || code.hasPrefix("3"))) ||
+              (market=="BJ" && (code.hasPrefix("8") || code.hasPrefix("9"))) else { return nil }
+        return code
+    }
+
     static func pageURL(tsCode: String) -> URL? {
         guard tsCode.range(of: "^\\d{6}\\.(SH|SZ)$", options: .regularExpression) != nil else { return nil }
         let code = String(tsCode.prefix(6))

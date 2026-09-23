@@ -13,6 +13,11 @@ import Foundation
             assert(parts.queryItems?.first?.value==page)
             assert(link.absoluteString==TonghuashunLink.urlString(tsCode:code))
         }
+        assert(TonghuashunLink.searchCode(tsCode:"600519.SH")=="600519")
+        assert(TonghuashunLink.searchCode(tsCode:"300857.SZ")=="300857")
+        assert(TonghuashunLink.searchCode(tsCode:"920489.BJ")=="920489")
+        assert(TonghuashunLink.searchCode(tsCode:"000001.SH")==nil)
+        assert(TonghuashunLink.searchCode(tsCode:"600519.SZ")==nil)
         for code in ["600519", "600519.sh", "600519.HK", "000001.SHX", "../600519.SH", "", "920489.BJ", "000001.SH", "600519.SZ"] {
             assert(TonghuashunLink.pageURL(tsCode:code)==nil,code)
             assert(TonghuashunLink.url(tsCode:code)==nil,code)
