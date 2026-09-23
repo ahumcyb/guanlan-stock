@@ -20,10 +20,9 @@ struct OpenInTonghuashunButton: View {
     let tsCode: String
     @State private var failure: String?
     var body: some View {
-        Menu {
-            Text("打开后点搜索，粘贴代码")
-            Button("复制代码并打开同花顺",systemImage:"magnifyingglass") { Task { await openSearch() } }
-        } label: { Text("同花顺") }
+        Button("同花顺") { Task { await openSearch() } }
+            .accessibilityLabel("复制股票代码并打开同花顺")
+            .accessibilityHint("打开后在同花顺中点搜索并粘贴代码")
         .alert("无法打开同花顺", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("好", role: .cancel) {}
         } message: {
