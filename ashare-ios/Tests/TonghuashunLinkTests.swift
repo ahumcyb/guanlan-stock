@@ -2,26 +2,12 @@ import Foundation
 
 @main struct TonghuashunLinkTests {
     static func main() {
-        for (code,stock) in [("603019.SH","603019"),("600519.SH","600519"),("000001.SZ","000001")] {
-            let page="https://m.10jqka.com.cn/stockpage/hs_\(stock)/"
-            assert(TonghuashunLink.pageURL(tsCode:code)?.absoluteString==page)
-            guard let link=TonghuashunLink.url(tsCode:code),
-                  let parts=URLComponents(url:link,resolvingAgainstBaseURL:false) else { fatalError("missing \(code)") }
-            assert(parts.scheme=="https" && parts.host=="backwash.10jqka.com.cn")
-            assert(parts.path=="/universalLink/sjcg.html")
-            assert(parts.queryItems?.count==1 && parts.queryItems?.first?.name=="url")
-            assert(parts.queryItems?.first?.value==page)
-            assert(link.absoluteString==TonghuashunLink.urlString(tsCode:code))
+        for (stock,code) in [("600519.SH","600519"),("300857.SZ","300857"),("920489.BJ","920489")] {
+            assert(TonghuashunLink.searchCode(tsCode:stock)==code)
         }
-        assert(TonghuashunLink.searchCode(tsCode:"600519.SH")=="600519")
-        assert(TonghuashunLink.searchCode(tsCode:"300857.SZ")=="300857")
-        assert(TonghuashunLink.searchCode(tsCode:"920489.BJ")=="920489")
-        assert(TonghuashunLink.searchCode(tsCode:"000001.SH")==nil)
-        assert(TonghuashunLink.searchCode(tsCode:"600519.SZ")==nil)
-        for code in ["600519", "600519.sh", "600519.HK", "000001.SHX", "../600519.SH", "", "920489.BJ", "000001.SH", "600519.SZ"] {
-            assert(TonghuashunLink.pageURL(tsCode:code)==nil,code)
-            assert(TonghuashunLink.url(tsCode:code)==nil,code)
+        for rejected in ["600519", "600519.sh", "600519.HK", "000001.SHX", "../600519.SH", "", "000001.SH", "600519.SZ", "920489.SH"] {
+            assert(TonghuashunLink.searchCode(tsCode:rejected)==nil,rejected)
         }
-        print("Tonghuashun verified universal-link tests passed")
+        print("Tonghuashun native-search code validation passed")
     }
 }
