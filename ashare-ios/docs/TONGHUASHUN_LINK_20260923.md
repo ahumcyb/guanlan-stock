@@ -1,9 +1,9 @@
 # 同花顺个股跳转核验
 
-用户在 iOS 同花顺中打开后未到当前股票。旧观澜链接 `amihexin://client.html?action=...` 把桌面端 client.html 命令套在 iOS 唤醒 scheme 上。同花顺官方 `backWash_v5.1.js` 在 iPhone 分支以 `amihexin://` 唤醒 App，个股定位走另一个回流链接；iOS `open` 成功只说明系统受理 URL，无法证明股票页已打开。
+用户反馈旧 `amihexin://client.html?...` 只能唤起 iOS 同花顺，不能定位当前股票。该串用了桌面端参数，同花顺官方 `backWash_v5.1.js` 在 iPhone 上把 `amihexin://` 用作唤醒入口。
 
-已将按钮改为「查看同花顺个股页」，只对代码和市场一致的沪深A股生成同花顺官网的 `https://stockpage.10jqka.com.cn/{六位代码}/`。已核验官网 600519 和 000001 页面分别指向贵州茅台、平安银行。北交所及代码/市场不一致时不跳转，以免指向错误股票。
+用户提供官方手机分享地址 `https://m.10jqka.com.cn/stockpage/hs_603019/#...`。同花顺官方 `backwash.10jqka.com.cn` 的 AASA 将 `/universalLink/sjcg.html` 关联到 iOS 同花顺。观澜现构造这个 Universal Link，唯一查询项 `url` 是相应股票的 `https://m.10jqka.com.cn/stockpage/hs_{六位代码}/`。不带分享统计片段，不从股票名称或外部输入拼接任意网址；只允许代码前缀与交易所匹配的沪深A股。
 
-该版本保证对应官网个股页，不宣称同花顺 iOS App 个股原生页直达。后者待获取当前 iOS 同花顺 App 的实际「分享 → 复制链接」并在真机验证后再接入。
+在新 iPhone 上实测：同花顺原先停在中科曙光603019；从观澜时代出版600551、贵州茅台600519分别点击测试入口后，均进入同花顺 App 内对应股票的手机个股页面。两次测试都拒绝了同花顺读取微信剪贴板的请求，跳转仍正确。App 内显示的是同花顺手机网页视图，不是它的原生报价页。
 
-用户提供同花顺 iOS 分享地址 `https://m.10jqka.com.cn/stockpage/hs_603019/#...`。后续手机个股网页入口改为相同的 `/stockpage/hs_{code}/` 模式，不携带分享追踪片段；iOS App 内直达仍需真机验证。
+正式按钮“在同花顺打开”使用 `UIApplication.open` 的 `universalLinksOnly`，若系统或同花顺拒绝则显示说明和“查看同花顺网页”备用按钮，不静默跳到首页或其他股票。北交所链接尚无已核验格式，暂不启用。
