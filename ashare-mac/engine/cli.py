@@ -64,6 +64,18 @@ def list_stock(stock):
     return stock if stock.get('state')=='入选' else {key:stock[key] for key in LIST_FIELDS if key in stock}
 
 
+def suppress_without_valid_limits(signals,limits,asof):
+    """Exclude latest-session rows without a tradable limit reference in place."""
+    today=limits.loc[(limits.trade_date==asof) & (limits.down_limit>0)
+                     & (limits.up_limit>limits.down_limit),'ts_code']
+    valid=set(today)
+    excluded=(signals.trade_date==asof) & ~signals.ts_code.isin(valid)
+    for column in ('eligible','setup','confirmed','watch'):
+        if column in signals.columns:signals.loc[excluded,column]=False
+    if 'score' in signals.columns:signals.loc[excluded,'score']=0.
+    return signals,valid
+
+
 def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts='priority'):
     root, overlay, output = root.resolve(), overlay.resolve(), output.resolve()
     if charts not in ['none','priority','all']:raise ValueError('未知 K 线生成范围')
@@ -106,6 +118,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts
             from .orderflow import collect_daily
             progress('核验有日期的大单资金流与盘口复盘…')
             signals,orderflow_status=collect_daily(signals,asof,market_dates)
+        signals,valid_limit_codes=suppress_without_valid_limits(signals,limits,asof)
         del computed
         latest = signals[signals.trade_date==asof]
         shortlist = select_day(latest)
@@ -121,7 +134,8 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts
         all_latest['change'] = all_latest.ret1 * 100
         all_latest['rank'] = all_latest.ts_code.map({c:i+1 for i,c in enumerate(shortlist.ts_code)}).fillna(0).astype(int)
         all_latest['adjusted'] = all_latest.ts_code.isin(factors.loc[factors.trade_date==asof,'ts_code'])
-        all_latest['limit_available'] = all_latest.ts_code.isin(limits.loc[limits.trade_date==asof,'ts_code'])
+        reference_limit_codes=set(limits.loc[limits.trade_date==asof,'ts_code'])
+        all_latest['limit_available'] = all_latest.ts_code.isin(reference_limit_codes)
         keep = ['ts_code','name','industry','trade_date','close','change','score','state','rank','eligible','stale',
                 'adjusted','limit_available','ret20','rs20','atr','volume_ratio','pullback','extension','amount20',
                 'support','breakout','invalidation','trend_ok','strength_ok','pullback_ok','volume_ok','turn_ok',
@@ -148,7 +162,8 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts
         expected_as_of=market_status(opened,now)['expected_as_of']
         stale_sessions=sum(asof<d<=expected_as_of for d in opened) if expected_as_of else 0
         missing_adj = len(set(latest.ts_code)-set(factors.loc[factors.trade_date==asof,'ts_code']))
-        missing_limit = len(set(latest.ts_code)-set(limits.loc[limits.trade_date==asof,'ts_code']))
+        missing_limit = len(set(latest.ts_code)-reference_limit_codes)
+        no_limit = len(set(latest.ts_code) & (reference_limit_codes-valid_limit_codes))
         warnings = ['历史股票名单与 ST 状态缺少逐日快照，存在幸存者偏差；当前行业也用于历史分组。',
                     '固定参数的历史信号研究，样本会重叠；尚未完成独立样本外与模拟实盘验证。',
                     '按日线与实际限制价估计成交，未建模盘口、最小佣金与整数手数；不构成组合收益。']
@@ -161,6 +176,7 @@ def generate(root: Path, overlay: Path, output: Path, strategy='leaders', charts
             warnings.insert(0,'左侧观察：超跌与抛压收敛不代表底部已确认；固定规则尚未通过独立样本外与模拟实盘验证。')
         if missing_adj: warnings.insert(0,f'最新日线有 {missing_adj} 只缺复权因子；连续价格信号仅供观察。')
         if missing_limit: warnings.insert(0,f'最新日线有 {missing_limit} 只缺涨跌停价；缺失事件不能计为可成交。')
+        if no_limit: warnings.insert(0,f'最新日线有 {no_limit} 只依法不设涨跌幅限制，行情记录完整，但不纳入常规精选。')
         if stale_sessions: warnings.insert(0,f'行情落后交易日历 {stale_sessions} 个交易日，请更新数据。')
         incomplete=counts[(counts.index>=full.index.min()) & ~counts.index.isin(full.index)].index.tolist()
         if incomplete: warnings.insert(0,'以下日期截面覆盖不足，已从信号计算排除：'+', '.join(incomplete))

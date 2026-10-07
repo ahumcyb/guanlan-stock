@@ -31,7 +31,7 @@ class DattaMarketProvider:
 
     def prepare_days(self,dates,known_codes=()):
         if not dates:return
-        from .datta_reference import universe, reference_quote, continuous_factors, no_limit_ipo
+        from .datta_reference import universe, reference_quote, continuous_factors, no_limit_ipo, verified_no_limit_day
         for date in dates:date_value(date)
         self._basic=universe(self.client)
         codes=sorted(set(known_codes)|set(self._basic.ts_code))
@@ -61,7 +61,8 @@ class DattaMarketProvider:
             try:
                 payload=self.client.transport('/d6/market/v1/stock/fundamentals',{'symbol':code[-2:].lower()+code[:6]})
                 day=date_value(payload['data']['marketDate']).strftime('%Y%m%d')
-                exempt=no_limit_ipo(code,day,listing.get(code),getattr(self,'open_dates',set()))
+                exempt=(no_limit_ipo(code,day,listing.get(code),getattr(self,'open_dates',set()))
+                        or verified_no_limit_day(code,day))
                 return reference_quote(payload,code,allow_no_limit=exempt)
             except (KeyError,TypeError):raise DattaError('达塔参考行情字段缺失') from None
         refs=self.client.collect(codes,fetch_reference,budget=900)

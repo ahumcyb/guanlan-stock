@@ -63,3 +63,23 @@ class StrategyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VerifiedNoLimitSelectionTests(unittest.TestCase):
+    def test_zero_limit_stock_cannot_be_selected_as_regular_shortline_candidate(self):
+        from engine.cli import suppress_without_valid_limits
+        signals=pd.DataFrame([
+            dict(ts_code='301139.SZ',trade_date='20260930',eligible=True,setup=True,confirmed=True,watch=False,score=80.),
+            dict(ts_code='300857.SZ',trade_date='20260930',eligible=True,setup=True,confirmed=True,watch=False,score=80.),
+            dict(ts_code='301139.SZ',trade_date='20260929',eligible=True,setup=True,confirmed=True,watch=False,score=80.),
+        ])
+        limits=pd.DataFrame([
+            dict(ts_code='301139.SZ',trade_date='20260930',up_limit=0.,down_limit=0.),
+            dict(ts_code='300857.SZ',trade_date='20260930',up_limit=100.,down_limit=80.),
+        ])
+        result,valid=suppress_without_valid_limits(signals,limits,'20260930')
+        self.assertEqual(valid,{'300857.SZ'})
+        self.assertFalse(result.iloc[0].eligible or result.iloc[0].confirmed)
+        self.assertEqual(result.iloc[0].score,0)
+        self.assertTrue(result.iloc[1].confirmed)
+        self.assertTrue(result.iloc[2].confirmed)

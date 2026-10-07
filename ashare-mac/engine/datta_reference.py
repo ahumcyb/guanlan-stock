@@ -56,6 +56,14 @@ def no_limit_ipo(code,day,listing,open_dates):
     return 1<=sum(listing<=d<=day for d in open_dates)<=5
 
 
+def verified_no_limit_day(code,day):
+    # The exchange confirmed 301139.SZ entered its delisting period on
+    # 2026-09-30; its first session has no daily price limit. Keep this
+    # exception specific to the disclosed symbol and date.
+    # https://investor.szse.cn/disclosure/notice/t20260922_622981.html
+    return (code,day)==('301139.SZ','20260930')
+
+
 def reference_quote(payload, code,allow_no_limit=False):
     if payload.get('code')!=0:raise DattaError('达塔参考行情未返回')
     d=payload.get('data',{})
@@ -65,11 +73,10 @@ def reference_quote(payload, code,allow_no_limit=False):
     if source_time(d['dataTimestamp']).strftime('%Y%m%d')!=day:
         raise DattaError('达塔参考行情时间不一致')
     up=round(number(d['upPx'])/1000,2);down=round(number(d['downPx'])/1000,2)
-    # Explicit vendor 0/0 denotes a no-limit listing session. Preserve it;
-    # existing strategy constraints reject those sessions rather than inventing
-    # a percentage limit for an IPO.
+    # Explicit vendor 0/0 denotes a verified no-limit session. Preserve it;
+    # strategy constraints reject those sessions rather than inventing a limit.
     if down<0 or up<down or (up==down and up!=0):raise DattaError('达塔涨跌停价无效')
-    if up==down==0 and not allow_no_limit:raise DattaError('零涨跌停价未确认属于新股无涨跌幅限制期')
+    if up==down==0 and not allow_no_limit:raise DattaError('零涨跌停价未确认属于依法无涨跌幅的交易日')
     shares=number(d['circulationAmount'],True);price=number(d['lastPx'],True)/1000
     market=number(d['circulationValue'],True)
     if not .995<=market/(shares*price)<=1.005:raise DattaError('达塔流通股本与市值单位不一致')

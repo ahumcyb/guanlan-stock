@@ -37,6 +37,52 @@ class DattaReferenceTests(unittest.TestCase):
         with self.assertRaises(DattaError):reference_quote(payload,'600000.SH')
         self.assertEqual(reference_quote(payload,'600000.SH',allow_no_limit=True)['up_limit'],0)
 
+    def test_verified_delisting_first_day_preserves_zero_limits_without_making_a_generic_exception(self):
+        from engine.datta_reference import verified_no_limit_day,reference_quote
+        from tests.test_datta import quote_payload
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        self.assertTrue(verified_no_limit_day('301139.SZ','20260930'))
+        self.assertFalse(verified_no_limit_day('301139.SZ','20261008'))
+        self.assertFalse(verified_no_limit_day('300857.SZ','20260930'))
+        receipt=int(datetime(2026,9,30,15,30,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp())
+        payload=quote_payload(code='301139',market='sz',marketDate=20260930,dataTimestamp=receipt,
+                              upPx=0,downPx=0,lastPx=910,circulationAmount=76156148,circulationValue=69302094)
+        with self.assertRaises(DattaError):reference_quote(payload,'301139.SZ')
+        value=reference_quote(payload,'301139.SZ',allow_no_limit=verified_no_limit_day('301139.SZ','20260930'))
+        self.assertEqual((value['up_limit'],value['down_limit']),(0,0))
+
+    def test_provider_collects_verified_delisting_reference_for_closing_package(self):
+        from unittest.mock import patch
+        from engine.market_source import DattaMarketProvider
+        from tests.test_datta import quote_payload
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        code='301139.SZ';day='20260930'
+        receipt=int(datetime(2026,9,30,15,30,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp())
+        payload=quote_payload(code='301139',market='sz',marketDate=20260930,dataTimestamp=receipt,
+                              upPx=0,downPx=0,lastPx=910,circulationAmount=76156148,circulationValue=69302094)
+        class Client:
+            def collect(self,codes,fetch,budget):
+                rows=[]
+                for item in codes:
+                    value=fetch(item);rows.extend(value if isinstance(value,list) else [value])
+                return rows
+            def history(self,stock,period,start,end):
+                return [dict(ts_code=code,trade_date=day,open=3.31,high=3.31,low=.91,close=.91,
+                             pre_close=3.31,vol=100.,amount=910.)]
+            def transport(self,path,params):return payload
+        basic=pd.DataFrame([dict(ts_code=code,name='*ST元道',industry='软件',list_date='20220708')])
+        prior=pd.DataFrame([dict(ts_code=code,trade_date='20260929',close=3.31)])
+        factors=pd.DataFrame([dict(ts_code=code,trade_date='20260929',adj_factor=1.)])
+        with patch('engine.datta_reference.universe',return_value=basic):
+            provider=DattaMarketProvider(client=Client())
+            provider.set_history({'daily':prior,'adj_factor':factors})
+            provider.prepare_days([day])
+            limits=provider.fetch('stk_limit',trade_date=day)
+        self.assertEqual(limits.iloc[0].ts_code,code)
+        self.assertEqual((limits.iloc[0].up_limit,limits.iloc[0].down_limit),(0,0))
+
     def test_new_listing_bootstraps_observed_bars_before_target_day(self):
         from unittest.mock import patch
         from engine.market_source import DattaMarketProvider
