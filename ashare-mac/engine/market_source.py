@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import timedelta
 
 from .data import FIELDS
-from .datta import DattaClient, DattaError, CODE, date_value
+from .datta import DattaClient, DattaError, DattaUnavailable, CODE, date_value
 from .intraday import local_now, normalize_quote
 from .market_config import market_configuration
 from .d101_batch import BatchFallback, capture_batch, verify_batch
@@ -12,10 +12,15 @@ from .d101_batch import BatchFallback, capture_batch, verify_batch
 class DattaMarketProvider:
     name='达塔 D6'
 
-    def __init__(self,reference_factory=None,client=None):
+    def __init__(self,reference_factory=None,client=None,quote_client=None):
         settings=market_configuration()
         self.client=client or DattaClient(settings['base_url'],settings['workers'])
-        self.batch_enabled=settings['quote_mode']=='d101_batch'
+        self.d20x_enabled=settings['quote_mode']=='d101_d204'
+        self.batch_enabled=settings['quote_mode'] in ['d101_batch','d101_d204']
+        if self.d20x_enabled:
+            from .d20x import D20xClient
+            self.quote_client=quote_client or D20xClient(settings['base_url'])
+        else:self.quote_client=quote_client or self.client
         self.batch_base_url=settings['base_url']
         self._basic=None;self._daily={}
         self._refs=pd.DataFrame(columns=['ts_code','trade_date','up_limit','down_limit','float_share'])
@@ -107,12 +112,12 @@ class DattaMarketProvider:
         return self.fetch(api,**params)
 
     def quotes(self,codes):
-        rows=self.client.quotes(codes);now=local_now();valid=[]
+        rows=self.quote_client.quotes(codes);now=local_now();valid=[]
         for row in rows:
             try:normalize_quote(row,now)
             except (ValueError,TypeError):continue
             valid.append(row)
-        self.quote_diagnostics=dict(self.client.diagnostics,datta_quotes=len(valid),
+        self.quote_diagnostics=dict(self.quote_client.diagnostics,datta_quotes=len(valid),
                                     unavailable=len(codes)-len(valid))
         return valid
 
@@ -122,23 +127,32 @@ class DattaMarketProvider:
             from .datta_session import require_session
             require_session()
             capture=capture_batch(self.batch_base_url,codes,now.strftime('%Y%m%d'))
-            rows,diagnostics=verify_batch(capture,codes,features,self.client,local_now(),include_bottom,clock=local_now)
+            rows,diagnostics=verify_batch(capture,codes,features,self.quote_client,local_now(),include_bottom,clock=local_now)
+            if self.d20x_enabled:diagnostics.update(provider='datta_d204',verification_channel='D204')
             self.quote_diagnostics=dict(diagnostics,datta_quotes=len(rows))
             return rows
+        except DattaUnavailable:raise
         except (BatchFallback,DattaError) as error:
             # Keep the proven full-universe path available when batch data cannot
             # be trusted. Never attach receipt time to an unverified candidate.
-            reason=str(error) if isinstance(error,BatchFallback) else 'd6_verification_unavailable'
+            reason=str(error) if isinstance(error,BatchFallback) else 'quote_verification_unavailable'
             rows=self.quotes(codes)
-            self.quote_diagnostics.update(mode='d6_fallback',batch_fallback_reason=reason)
+            self.quote_diagnostics.update(mode='d204_full' if self.d20x_enabled else 'd6_fallback',batch_fallback_reason=reason)
             return rows
 
     def index_quote(self,code='000300.SH'):
         if code!='000300.SH':raise DattaError('盘中策略仅使用沪深300指数')
+        # D204 v95's index datetime also advances outside trading. Keep the
+        # existing source timestamp until an independent index clock is proven.
         row=self.client.quote(code)
         normalize_quote(row,local_now(),index=True)
         self.index_diagnostics=dict(provider='datta_d6',datta_quotes=1)
         return row
+
+    def enrich_candidates(self,report):
+        if not self.d20x_enabled:return
+        from .d20x import enrich_candidates
+        enrich_candidates(report,self.quote_client)
 
 
 def make_daily_provider(reference_factory=None):

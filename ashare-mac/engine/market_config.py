@@ -28,7 +28,7 @@ def market_configuration():
         raise DattaError('行情仅支持达塔，ProMax 已停用，请迁移旧配置')
     if value['primary_provider'] not in [None,'datta']:
         raise DattaError('优先行情来源配置无效')
-    if value['quote_mode'] not in ['d6','d101_batch'] or value['primary_quote_mode'] not in [None,'d6','d101_batch']:
+    if value['quote_mode'] not in ['d6','d101_batch','d101_d204'] or value['primary_quote_mode'] not in [None,'d6','d101_batch','d101_d204']:
         raise DattaError('批量行情配置无效')
     value['base_url']=validate_base_url(value['base_url'])
     if type(value['workers']) is not int or not 1<=value['workers']<=32:
@@ -38,6 +38,7 @@ def market_configuration():
 
 def market_provider_name():
     config=market_configuration();names={'datta':'达塔 D6','promax':'ProMax'}
+    if config['quote_mode']=='d101_d204':return '达塔 D204 实时快照＋D203 逐笔核验'
     if config['primary_provider'] and config['primary_provider']!=config['provider']:
         primary=names[config['primary_provider']]
         if config['primary_provider']=='datta' and config['primary_quote_mode']=='d101_batch':primary='达塔批量初筛＋D6复核'

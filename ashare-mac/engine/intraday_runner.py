@@ -320,9 +320,11 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
         if batch_verified:
             report.update(quote_count=diagnostics['coverage_count'],batch_quote_count=diagnostics['batch_count'],
                           batch_received_at=diagnostics['batch_received_at'])
-            report['warnings'].append(f"D101同日批量覆盖 {diagnostics['coverage_count']}/{len(codes)}，D6逐股复核 {diagnostics['verified_count']}只。批量记录为采集时点数据，最终候选使用D6行情更新时间。")
-        elif diagnostics.get('provider')=='datta_d6':
-            report['warnings'].append(f"本轮有效报价：达塔 D6 {diagnostics['datta_quotes']}只；按各股票行情更新时间校验。")
+            channel=diagnostics.get('verification_channel','D6')
+            report['warnings'].append(f"D101同日批量覆盖 {diagnostics['coverage_count']}/{len(codes)}，{channel}逐股复核 {diagnostics['verified_count']}只。批量记录为采集时点数据，最终候选使用{channel}行情更新时间。")
+        elif diagnostics.get('provider') in ['datta_d6','datta_d204']:
+            channel='D204' if diagnostics['provider']=='datta_d204' else 'D6'
+            report['warnings'].append(f"本轮有效报价：达塔 {channel} {diagnostics['datta_quotes']}只；按各股票行情更新时间校验。")
         else:
             report['warnings'].append(f"本轮有效报价：ProMax {diagnostics['promax_quotes']}只，新浪备用 {diagnostics['sina_quotes']}只；时间来自对应报价记录。")
         if diagnostics.get('primary_rejected'):
@@ -330,6 +332,7 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
         if diagnostics.get('fallback_errors'):
             report['warnings'].append(f"备用行情有 {diagnostics['fallback_errors']} 个批次获取失败；未使用无效报价。")
         if diagnostics.get('mode')=='d6_fallback':report['warnings'].append('批量数据未通过检查，已回退全池D6逐股采集。')
+        if diagnostics.get('mode')=='d204_full':report['warnings'].append('批量数据未通过检查，已改为有用量上限的全池D204单次查询。')
     if getattr(provider, 'conflicting_quotes', 0):
         report['warnings'].append(f"剔除{provider.conflicting_quotes}只存在冲突快照的股票")
     if report['quote_count'] < len(codes):
@@ -412,6 +415,7 @@ def _run(root, cache, kind='screen', previous_candidates=None, provider=None, pr
 
 
 def run(root,cache,kind='screen',previous_candidates=None,provider=None,progress=None,slot_id=None):
+    provider=provider or make_intraday_provider()
     report=_run(root,cache,kind,previous_candidates,provider,progress,slot_id)
     context=report.pop('_orderflow_context',None)
     if context:
@@ -426,6 +430,11 @@ def run(root,cache,kind='screen',previous_candidates=None,provider=None,progress
             report['orderflow']=dict(rule_version=1,status='blocked',requested=0,verified=0,matched_count=0,candidates=[],
                 checked_at=now.timestamp(),oldest_quote_at=now.timestamp(),message='本轮剩余新鲜度预算不足，大单承接未执行，原策略结果保留。')
         report['generated_at']=local_now().timestamp()
+    if kind=='screen' and hasattr(provider,'enrich_candidates'):
+        provider.enrich_candidates(report)
+    if any(local_now().timestamp()-r['quote_at']>180 for rows in report['strategies'].values() for r in rows):
+        report.update(strategies={'overnight':[],'golden':[]},status='blocked',failure_code='quotes_expired',
+                      failure_stage='validation',message='行情在后续采集期间过时，原策略候选未发布。')
     flow=report.get('orderflow')
     if flow and local_now().timestamp()-flow['oldest_quote_at']>180:
         flow.update(status='blocked',matched_count=0,candidates=[],message='行情在后续采集期间过时，大单结果未发布。')
