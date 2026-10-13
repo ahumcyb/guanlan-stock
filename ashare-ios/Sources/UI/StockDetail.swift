@@ -86,6 +86,8 @@ struct MobileStockDetail:View {
         }
         .background(MobileTheme.background)
         .navigationTitle(shown.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .crispTopEdge()
         .toolbar { ToolbarItem(placement:.primaryAction) { Button { store.toggleFavorite(stock) } label: { Image(systemName:store.favorites.contains(stock.id) ? "star.fill":"star").accessibilityLabel(store.favorites.contains(stock.id) ? "移出观察列表":"加入观察列表") }.tint(MobileTheme.teal) } }
         .task(id:manifest.generation+stock.id) { await load() }
     }

@@ -7,6 +7,7 @@ struct MobileResearch:View {
         NavigationStack {
             ScrollView {
                 VStack(alignment:.leading,spacing:16) {
+                    StrategyChips(selection:store.strategy,disabled:store.busy) { store.changeStrategy($0) }
                     if let report=store.report {
                         ResearchCard { VStack(alignment:.leading,spacing:12) { Text(report.strategyName ?? "短线研究").font(.title3.weight(.semibold));Text(report.isOrderflow ? "尚无完整同源历史样本":"\(dateText(report.backtest.start)) — \(dateText(report.backtest.end))").font(.caption).foregroundStyle(.secondary);Text(report.isOrderflow ? "从真实发布的精选记录观察后续表现，暂不展示历史胜率。":"次日开盘进入，往返成本 0.30%。多个信号可能重叠，以下为单次事件统计。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4) } }
                         if report.isMomentum60 {
@@ -14,13 +15,14 @@ struct MobileResearch:View {
                         }
                         if !report.isOrderflow { Picker("持有期",selection:$horizon) { ForEach([1,3,5],id:\.self) { Text("持有 \($0) 日").tag($0) } }.pickerStyle(.segmented) }
                         if let result=report.backtest.horizons.first(where:{$0.horizon==horizon}) {
-                            ResearchCard { VStack(alignment:.leading,spacing:18) { HStack { Metric(label:"平均单次净收益",value:percent(result.mean,signed:true),color:MobileTheme.change(result.mean ?? 0));Metric(label:"获利事件占比",value:percent(result.winRate)) };HStack { Metric(label:"可结算事件",value:"\(result.count) / \(result.total)");Metric(label:"成本提高至 0.60%",value:percent(result.stressMean,signed:true),color:MobileTheme.change(result.stressMean ?? 0)) };Divider();HStack { Text("简单流动性参照").font(.subheadline);Spacer();Text(percent(result.benchmark.mean,signed:true)).font(.headline.monospacedDigit()).foregroundStyle(MobileTheme.change(result.benchmark.mean ?? 0)) };Text(report.backtest.benchmarkLabel).font(.caption).foregroundStyle(.secondary) } }
+                            ResearchCard { VStack(alignment:.leading,spacing:18) { HStack { Metric(label:"平均单次净收益",value:percent(result.mean,signed:true),color:MobileTheme.change(result.mean ?? 0));Metric(label:"获利事件占比",value:percent(result.winRate)) };HStack { Metric(label:"可结算事件",value:"\(result.count) / \(result.total)");Metric(label:"成本提高至 0.60%",value:percent(result.stressMean,signed:true),color:MobileTheme.change(result.stressMean ?? 0)) };Divider();HStack { Text("简单流动性参照").font(.subheadline);Spacer();Text(percent(result.benchmark.mean,signed:true)).font(.headline.monospacedDigit()).foregroundStyle(MobileTheme.change(result.benchmark.mean ?? 0)) };Text(report.backtest.benchmarkLabel).font(.caption).foregroundStyle(.secondary)
+                                if let verdict=comparison(result.mean,result.benchmark.mean) { Label(verdict.text,systemImage:verdict.ahead ? "arrow.up.right.circle.fill":"arrow.down.right.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(verdict.ahead ? MobileTheme.up:MobileTheme.down).padding(10).frame(maxWidth:.infinity,alignment:.leading).background((verdict.ahead ? MobileTheme.up:MobileTheme.down).opacity(0.08),in:RoundedRectangle(cornerRadius:10)) } } }
                             ResearchCard { VStack(alignment:.leading,spacing:12) { Text("样本审计").font(.headline);ForEach(result.statuses.keys.sorted(),id:\.self) { key in HStack { Text(statusName(key));Spacer();Text(String(result.statuses[key] ?? 0)).monospacedDigit() }.font(.subheadline) } } }
                         }
                         ResearchCard {
                             VStack(alignment:.leading,spacing:14) {
                                 Text(report.isOrderflow ? "从发布日起积累观察记录":"分月结果 · 持有 3 日").font(.headline)
-                                ForEach(report.backtest.monthly) { month in HStack { Text(month.displayMonth).font(.subheadline.monospaced());Spacer();Text(month.sampleLabel).font(.caption).foregroundStyle(.secondary);Text(percent(month.mean,signed:true)).font(.subheadline.monospacedDigit()).foregroundStyle(MobileTheme.change(month.mean ?? 0)).frame(width:86,alignment:.trailing) } }
+                                ForEach(report.backtest.monthly) { month in HStack { Text(month.displayMonth).font(.subheadline.monospacedDigit());Spacer();Text(month.sampleLabel).font(.caption).foregroundStyle(.secondary);Text(percent(month.mean,signed:true)).font(.subheadline.monospacedDigit()).foregroundStyle(MobileTheme.change(month.mean ?? 0)).frame(width:86,alignment:.trailing) } }
                             }
                         }
                         ResearchCard {
@@ -41,8 +43,15 @@ struct MobileResearch:View {
                         }
                     } else { EmptyMessage(title:"同步后查看历史检验",text:"手机和 Mac 使用同一份研究结果。") }
                 }.padding(16)
-            }.background(MobileTheme.background).navigationTitle("历史检验")
+            }.background(MobileTheme.background).navigationTitle("历史检验").toolbarTitleDisplayMode(.inlineLarge).crispTopEdge()
         }
+    }
+    /// 均值为百分数小数（0.005 = 0.5%），差值换算成百分点。
+    private func comparison(_ mean:Double?,_ benchmark:Double?)->(text:String,ahead:Bool)? {
+        guard let mean,let benchmark else { return nil }
+        let gap=(mean-benchmark)*100
+        if abs(gap)<0.005 { return ("与参照基本持平",true) }
+        return (String(format:"%@参照 %.2f 个百分点",gap>0 ? "跑赢":"跑输",abs(gap)),gap>0)
     }
     private func statusName(_ value:String)->String { ["settled":"可结算","pending":"观察期未结束","gap":"高开超过3%","limit_up":"开盘涨停","missing_signal":"信号日缺数","missing_entry":"进入日缺数","missing_exit":"退出日缺数","unresolved":"延期后仍无法结算","censored":"延迟窗口未结束"][value] ?? value }
 }

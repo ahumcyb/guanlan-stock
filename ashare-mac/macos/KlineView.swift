@@ -51,7 +51,7 @@ struct KlineView:View {
                 HStack(spacing:8) {
                     ForEach([10,20,60],id:\.self) { value in
                         Button { if averages.contains(value) { averages.remove(value) } else { averages.insert(value) } } label: {
-                            Text("MA\(value) \(chartPrice(reading.ma(value)))").font(.system(size:10,weight:.medium,design:.monospaced))
+                            Text("MA\(value) \(chartPrice(reading.ma(value)))").font(.system(size:11,weight:.medium).monospacedDigit())
                         }.buttonStyle(.plain).foregroundStyle(averages.contains(value) ? KlineColors.ma(value):.secondary)
                             .accessibilityLabel("\(averages.contains(value) ? "隐藏":"显示")\(value)\(period.unit)均线")
                     }
@@ -150,7 +150,7 @@ struct KlineView:View {
         }
     }
     private func item(_ title:String,_ value:String)->some View {
-        VStack(alignment:.leading,spacing:3) { Text(title).font(.caption2).foregroundStyle(.secondary);Text(value).font(.system(size:12,weight:.medium,design:.monospaced)).lineLimit(1).minimumScaleFactor(0.8) }
+        VStack(alignment:.leading,spacing:3) { Text(title).font(.caption2).foregroundStyle(.secondary);Text(value).font(.system(size:13,weight:.medium).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.8) }
     }
     private var navigation:some View {
         HStack(spacing:10) {

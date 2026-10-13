@@ -5,141 +5,116 @@ struct RealtimeScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack {
-                        Image(systemName: "clock.badge.checkmark").foregroundStyle(MobileTheme.teal)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("尾盘有提醒，判断有依据").font(.headline)
-                            Text("14:30 初筛 · 14:45 复核 · 14:50 提醒").font(.caption).foregroundStyle(.secondary)
+                // 1. 今日结果放最前：打开 App 首先看到候选。
+                if let snapshot = store.realtime?.lastScreen, snapshot.complete {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(snapshot.message).font(.subheadline.weight(.medium))
+                            HStack(spacing: 6) {
+                                Text("\(realtimeSlot(snapshot.slot)) · \(realtimeDate(snapshot.generatedAt))")
+                                if let change = snapshot.indexChange { Text("·");Text(String(format: "沪深300 %+.2f%%", change)).foregroundStyle(MobileTheme.change(change)) }
+                            }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }.padding(.vertical, 2)
+                        let notes = RealtimeWording.notable(snapshot.warnings)
+                        if !snapshot.warnings.isEmpty {
+                            DisclosureGroup {
+                                Text(snapshot.quoteCoverageLabel).font(.caption).foregroundStyle(.secondary)
+                                ForEach(snapshot.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if notes.isEmpty { Label("数据正常", systemImage: "checkmark.circle").foregroundStyle(MobileTheme.teal) }
+                                    ForEach(notes, id: \.self) { Label($0, systemImage: "exclamationmark.circle").foregroundStyle(MobileTheme.amber) }
+                                }.font(.caption)
+                            }
                         }
-                    }.padding(.vertical, 5)
-                    if let state = store.realtime {
-                        LabeledContent("计算节点", value: state.running ? (state.executor == "mac" ? "Mac 正在计算" : "服务器正在接管") : (state.macOnline ? "Mac 在线 · 优先计算" : (state.serverOnline ? "服务器备用就绪" : "节点暂时离线")))
-                            .font(.subheadline)
-                        LabeledContent("自动运行", value: state.settings.enabled ? "已开启 · 仅交易日" : "已暂停")
-                        LabeledContent("手机推送", value: state.settings.barkConfigured && state.settings.notificationEnabled ? "Bark 已配置" : "尚未启用 Bark")
-                        if let latest = state.latest {
-                            Text(latest.executionLabel).font(.subheadline.weight(.semibold))
-                            Text(latest.message).font(.subheadline)
-                            Text("最近检查 \(realtimeDate(latest.generatedAt)) · \(latest.executor == "mac" ? "Mac" : "服务器")")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text(store.realtimeMessage).font(.subheadline).foregroundStyle(.secondary)
+                    } header: { Text("今日尾盘结果 · \(dateText(snapshot.date))") }
+                    ForEach(["overnight", "golden"], id: \.self) { strategy in
+                        let candidates = snapshot.strategies[strategy] ?? []
+                        Section {
+                            if candidates.isEmpty { Text("本轮 0 只候选").font(.subheadline).foregroundStyle(.secondary) }
+                            ForEach(candidates) { candidate in
+                                NavigationLink { RealtimeCandidateDetail(candidate: candidate) } label: { RealtimeCandidateRow(candidate: candidate) }
+                            }
+                        } header: { HStack { Text(realtimeStrategy(strategy));Spacer();Text("\(candidates.count) 只") } }
                     }
-                    Button { Task { await store.realtimeAction("scan") } } label: { Label("立即检查运行状态与行情", systemImage: "arrow.clockwise") }
-                        .disabled(!store.connected || store.realtimeBusy)
-                    if store.realtime != nil { Text(store.realtimeMessage).font(.caption).foregroundStyle(.secondary) }
-                } footer: {
-                    Text("到点由 Mac 或备用服务器筛选，完成后手机收到提醒，点击查看结果。手机无需保持 App 打开。")
+                    if let ai = snapshot.ai {
+                        Section("DeepSeek · 可选解读") { RealtimeAIText(ai: ai) }
+                    }
+                } else {
+                    Section("今日尾盘结果") { Text("尚无完整筛选结果。交易日 14:30 起检查，数据核验完成后显示候选。").font(.subheadline).foregroundStyle(.secondary) }
                 }
-                Section("选股策略说明") {
-                    ForEach(RealtimeStrategyGuide.all) { guide in
-                        NavigationLink { RealtimeStrategyDetail(guide: guide) } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(guide.title).font(.headline)
-                                Text(guide.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }.padding(.vertical, 3)
+                // 2. 14:30 的两项观察。
+                Section {
+                    if let report=store.realtime?.lastBottom,let bottom=report.bottomVolume {
+                        Text("\(dateText(report.date)) · 命中 \(bottom.matchedCount) 只 · \(bottom.ruleLabel)").font(.caption).foregroundStyle(.secondary)
+                        ForEach(bottom.candidates) { candidate in NavigationLink { RealtimeCandidateDetail(candidate:candidate) } label: { RealtimeCandidateRow(candidate:candidate,trailing:String(format:"%.2f 倍",candidate.volumeMultiple)) } }
+                        if bottom.candidates.isEmpty { Text("该轮 0 只候选").foregroundStyle(.secondary) }
+                    } else { Text("等待下一交易日 14:30 检查").foregroundStyle(.secondary) }
+                } header: { Text("14:30 · 底部放量") }
+                Section {
+                    if let report=store.realtime?.lastFlow,let flow=report.orderflow {
+                        Text(dateText(report.date)+" · "+(flow.complete ? "命中 \(flow.matchedCount) 只":flow.message)).font(.caption).foregroundStyle(.secondary)
+                        ForEach(flow.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: { RealtimeCandidateRow(candidate:row,trailing:String(format:"%.1f%%",(row.flowNetRatio ?? 0)*100)) } }
+                        if flow.complete && flow.candidates.isEmpty { Text("该轮 0 只候选").foregroundStyle(.secondary) }
+                    } else { Text("等待下一交易日 14:30 检查").foregroundStyle(.secondary) }
+                } header: { Text("14:30 · 大单承接") } footer: { if store.realtime?.lastFlow?.orderflow?.candidates.isEmpty == false { Text("右侧数字为大单净流入占成交额比例。") } }
+                if let reviews = store.realtime?.latest?.reviews, !reviews.isEmpty {
+                    Section("昨日候选 · 早盘复查") {
+                        ForEach(reviews) { row in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) { Text(row.name).font(.body.weight(.medium));Text("\(row.note) · 参考价 \(String(format: "%.2f", row.referencePrice))").font(.caption).foregroundStyle(.secondary) }
+                                Spacer()
+                                Text(String(format: "%+.2f%%", row.change)).font(.body.monospacedDigit()).foregroundStyle(MobileTheme.change(row.change))
+                            }
                         }
                     }
                 }
                 Section("JEV · 买入判断") {
                     if let snapshot=store.realtime?.jevSnapshot {
                         if let review=snapshot.jev { JevReviewView(review:review) }
-                        else { Text("启用后会自动分析实时与盘后精选；也可从历史轮次发起回看。").font(.caption) }
-                        Button("分析本轮快照") { Task { await store.realtimeAction("jev",values:["slot":snapshot.slot]) } }.disabled(store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
-                    } else { Text("等待筛选轮次；历史分析可在原始结果中查看。").font(.caption) }
+                        else { Text("启用后会自动分析实时与盘后精选；也可从历史轮次发起回看。").font(.caption).foregroundStyle(.secondary) }
+                        Button { Task { await store.realtimeAction("jev",values:["slot":snapshot.slot]) } } label: { Label("分析本轮快照",systemImage:"sparkles") }
+                            .disabled(store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
+                    } else { Text("等待筛选轮次；历史分析可在历史轮次中查看。").font(.caption).foregroundStyle(.secondary) }
                 }
-                Section("历史轮次") {
-                    DisclosureGroup("查看初筛、复核与最终结果") {
+                // 3. 运行状态压成一行，详情放在设置里。
+                Section {
+                    if let state = store.realtime {
+                        HStack(spacing: 10) {
+                            Image(systemName: state.healthy ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(state.healthy ? MobileTheme.teal : MobileTheme.amber)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(state.statusLine).font(.subheadline)
+                                if let latest = state.latest { Text("\(latest.executionLabel) · \(realtimeDate(latest.generatedAt))").font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    } else { Text(store.realtimeMessage).font(.subheadline).foregroundStyle(.secondary) }
+                    Button { Task { await store.realtimeAction("scan") } } label: { Label(store.realtimeBusy ? "正在检查…":"立即检查运行状态与行情", systemImage: "arrow.clockwise") }
+                        .disabled(!store.connected || store.realtimeBusy)
+                    NavigationLink { RealtimeGuideList() } label: { Label("策略说明", systemImage: "book") }
+                    DisclosureGroup {
                         ForEach(store.realtimeHistory) { run in
                             Button { Task { await store.openRealtimeRun(run.slot) } } label: {
-                                VStack(alignment:.leading,spacing:5) { Text(run.label);Text(run.runState=="waiting" ? "等待策略时段":run.message).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                                VStack(alignment:.leading,spacing:4) { Text(run.label).font(.subheadline);Text(run.runState=="waiting" ? "等待策略时段":RealtimeWording.eventBody(run.message)).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                             }.buttonStyle(.plain)
                         }
                         if store.realtimeHistory.isEmpty { Text("暂无已保存轮次").foregroundStyle(.secondary) }
-                    }
+                    } label: { Label("历史轮次", systemImage: "clock.arrow.circlepath") }
+                } header: { Text("运行状态") } footer: {
+                    Text("交易日 14:30 初筛、14:45 复核、14:50 提醒。Mac 优先计算，服务器备用；手机无需保持 App 打开。")
                 }
-                Section("14:30 · 大单承接") {
-                    if let report=store.realtime?.lastFlow,let flow=report.orderflow {
-                        Text(dateText(report.date)+" · "+flow.message+(flow.complete ? " 命中\(flow.matchedCount)只，展示\(flow.candidates.count)只。":"")).font(.subheadline)
-                        ForEach(flow.candidates) { row in NavigationLink { RealtimeCandidateDetail(candidate:row) } label: {
-                            HStack { Text(row.name);Spacer();Text(String(format:"净流入 %.1f%%",(row.flowNetRatio ?? 0)*100)) }
-                        } }
-                        if flow.complete && flow.candidates.isEmpty { Text("该轮检查完成，0只候选").foregroundStyle(.secondary) }
-                    } else { Text("等待下一交易日14:30检查").foregroundStyle(.secondary) }
-                }
-                Section("14:30 · 底部放量2.5倍上涨") {
-                    if let report=store.realtime?.lastBottom,let bottom=report.bottomVolume {
-                        Text("\(dateText(report.date)) · 命中 \(bottom.matchedCount) 只，展示 \(bottom.candidates.count) 只").font(.subheadline)
-                        Text(bottom.ruleLabel).font(.caption).foregroundStyle(.secondary)
-                        ForEach(bottom.candidates) { candidate in NavigationLink { RealtimeCandidateDetail(candidate:candidate) } label: { HStack { Text(candidate.name);Spacer();Text(String(format:"%.2f 倍",candidate.volumeMultiple)).foregroundStyle(MobileTheme.teal) } } }
-                        if bottom.candidates.isEmpty { Text("该轮已完成检查，0只候选").foregroundStyle(.secondary) }
-                    } else { Text("尚无有效结果；下一交易日14:30检查，未记为0只。").foregroundStyle(.secondary) }
-                }
-                if let snapshot = store.realtime?.lastScreen,snapshot.complete {
-                    Section("最近尾盘检查 · \(dateText(snapshot.date))") {
-                        Text(snapshot.message).font(.subheadline)
-                        HStack {
-                            Text(snapshot.quoteCoverageLabel)
-                            Spacer()
-                            if let change = snapshot.indexChange { Text(String(format: "沪深300 %+.2f%%", change)) }
-                        }.font(.caption).foregroundStyle(.secondary)
-                        ForEach(snapshot.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
-                    }
-                    ForEach(["overnight", "golden"], id: \.self) { strategy in
-                        Section(realtimeStrategy(strategy)) {
-                            let candidates = snapshot.strategies[strategy] ?? []
-                            if candidates.isEmpty {
-                                Text("本轮已完成筛选，0 只候选").foregroundStyle(.secondary)
-                            }
-                            ForEach(candidates) { candidate in
-                                NavigationLink { RealtimeCandidateDetail(candidate: candidate) } label: {
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        HStack {
-                                            Text(candidate.name).font(.headline)
-                                            Spacer()
-                                            Text(String(format: "%.2f  %+.2f%%", candidate.price, candidate.change)).monospacedDigit().foregroundStyle(MobileTheme.change(candidate.change))
-                                        }
-                                        Text("\(candidate.tsCode) · \(candidate.state)").font(.caption).foregroundStyle(.secondary)
-                                        Text("行情 \(realtimeDate(candidate.quoteAt))").font(.caption2).foregroundStyle(.secondary)
-                                    }.padding(.vertical, 3)
-                                }
-                            }
-                        }
-                    }
-                    if let ai = snapshot.ai {
-                        Section("DeepSeek · 可选解读") {
-                            Text(ai.summary)
-                            ForEach(ai.risks, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
-                            Text("AI 仅解释已计算的规则，未核查全部新闻，不改变筛选结果。").font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                } else { Section { Text("尚无完整筛选结果。等待策略时段与数据核验完成后，再展示候选数量。").foregroundStyle(.secondary) } }
-                if let reviews = store.realtime?.latest?.reviews, !reviews.isEmpty {
-                    Section("昨日候选 · 早盘复查") {
-                        ForEach(reviews) { row in
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("\(row.name)  \(String(format: "%+.2f%%", row.change))").font(.headline).foregroundStyle(MobileTheme.change(row.change))
-                                Text("\(row.note) · 参考价 \(String(format: "%.2f", row.referencePrice))").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
+                // 4. 提醒记录：只列最近几条，只在发送异常时显示推送状态。
                 Section {
-                    if store.realtime?.events.isEmpty != false { Text("首次运行后，提醒会保存在这里").foregroundStyle(.secondary) }
-                    ForEach(store.realtime?.events ?? []) { event in
-                        Button { Task { await store.openReminder(event) } } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(event.title).font(.headline)
-                            Text(event.body).font(.subheadline)
-                            Text("\(realtimeDate(event.createdAt)) · \(event.deliveryLabel)").font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical, 4)
-                        }.buttonStyle(.plain)
+                    let events = store.realtime?.events ?? []
+                    if events.isEmpty { Text("首次运行后，提醒会保存在这里").foregroundStyle(.secondary) }
+                    ForEach(events.prefix(12)) { event in RealtimeEventRow(event: event) }
+                    if events.count > 12 {
+                        NavigationLink { RealtimeEventList() } label: { Text("查看全部 \(events.count) 条提醒").foregroundStyle(MobileTheme.teal) }
                     }
-                } header: { Text("提醒记录") } footer: { Text("Bark 接受请求不等于手机已经展示通知；请用设置中的测试按钮验证。") }
+                } header: { Text("提醒记录") } footer: { Text("推送服务接受请求不等于手机已展示通知；可在设置中发送测试通知。") }
             }
             .navigationTitle("实时提醒")
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .crispTopEdge()
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { store.realtimeSettingsPresented = true } label: { Image(systemName: "slider.horizontal.3").accessibilityLabel("实时提醒设置") } } }
             .refreshable { await store.refreshRealtime() }
             .task { await store.refreshRealtime();await store.refreshRealtimeHistory() }
@@ -170,7 +145,9 @@ struct RealtimeHistoryDetail:View {
                         if let review=report.jev { JevReviewView(review:review) }
                         Button("分析本轮快照") { Task { await store.realtimeAction("jev",values:["slot":report.slot]);await store.openRealtimeRun(report.slot) } }.disabled(!report.hasJevCandidates || store.realtime?.settings.jevEnabled != true || store.realtimeBusy)
                     }
-                    ForEach(report.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(MobileTheme.amber) }
+                    if !report.warnings.isEmpty {
+                        Section("数据说明") { ForEach(report.warnings,id:\.self) { raw in VStack(alignment:.leading,spacing:3) { Text(RealtimeWording.warning(raw)).font(.caption).foregroundStyle(MobileTheme.amber);if RealtimeWording.warning(raw) != raw { Text(raw).font(.caption2).foregroundStyle(.secondary) } } } }
+                    }
                     if report.complete {
                         ForEach(["overnight","golden"],id:\.self) { strategy in
                             Section(realtimeStrategy(strategy)) {
@@ -329,5 +306,47 @@ struct RealtimeSettingsScreen: View {
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
                 .onAppear { if let s = store.realtime?.settings { enabled = s.enabled;notifications = s.notificationEnabled;ai = s.aiEnabled;model = s.model;jevEnabled=s.jevEnabled ?? false } }
         }
+    }
+}
+
+struct RealtimeEventRow:View {
+    @EnvironmentObject var store:MobileStore
+    let event:RealtimeEvent
+    var body:some View {
+        Button { Task { await store.openReminder(event) } } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(event.title.replacingOccurrences(of: "观澜 · ", with: "")).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(realtimeDate(event.createdAt)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                Text(RealtimeWording.eventBody(event.body)).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                if event.status != "accepted" { Label(event.deliveryLabel, systemImage: "exclamationmark.triangle").font(.caption2).foregroundStyle(MobileTheme.amber) }
+            }.padding(.vertical, 2).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+struct RealtimeEventList:View {
+    @EnvironmentObject var store:MobileStore
+    var body:some View {
+        List { ForEach(store.realtime?.events ?? []) { RealtimeEventRow(event:$0) } }
+            .navigationTitle("全部提醒").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// AI 解读默认收起，避免长文把候选和 14:30 结果隔开。
+struct RealtimeAIText:View {
+    let ai:RealtimeAI
+    @State private var expanded=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text(ai.summary).font(.subheadline).lineLimit(expanded ? nil:3)
+            if expanded {
+                ForEach(ai.risks,id:\.self) { Label($0,systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.secondary) }
+                Text("AI 仅解释已计算的规则，未核查全部新闻，不改变筛选结果。").font(.caption2).foregroundStyle(.secondary)
+            }
+            Button(expanded ? "收起":"展开全文与风险提示") { withAnimation { expanded.toggle() } }.font(.caption).foregroundStyle(MobileTheme.teal)
+        }.padding(.vertical,2)
     }
 }

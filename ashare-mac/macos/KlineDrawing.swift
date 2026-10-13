@@ -86,10 +86,15 @@ struct KlinePlot:View {
         let markers:[(String,Double,Color)]=[("参考",reference,KlineColors.blue),("失效",invalidation,KlineColors.amber)]
             .compactMap { name,value,color in value.map{(name,$0,color)} }
         let markerYs=markers.map{min(rect.maxY-8,max(rect.minY+8,y($0.1)))}
+        // The selected or latest price tag also sits on the axis; keep tick labels clear of it.
+        var axisTagY:CGFloat?
+        if let selected,range.contains(selected) { axisTagY=y(cursorFraction.map(scale.price) ?? series.bars[selected].close) }
+        else if range.upperBound==series.bars.count,let latest=series.bars.last { axisTagY=y(latest.close) }
+        let occupied=markerYs+(axisTagY.map{[$0]} ?? [])
         for price in scale.ticks {
             let position=y(price)
             horizontal(context,y:position,rect:rect,color:KlineColors.grid,dash:[3,4])
-            if !markerYs.contains(where:{abs($0-position)<13}) {
+            if !occupied.contains(where:{abs($0-position)<13}) {
                 context.draw(Text(String(format:"%.*f",max(2,scale.decimals),price)).font(.system(size:10,design:.monospaced)).foregroundStyle(.secondary),at:CGPoint(x:rect.maxX+6,y:position),anchor:.leading)
             }
         }

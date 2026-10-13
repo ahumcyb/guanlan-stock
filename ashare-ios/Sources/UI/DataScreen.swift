@@ -52,7 +52,7 @@ struct MobileDataScreen:View {
                     }
                     Text("普通 Apple ID 自用安装需定期重新签名。股票研究规则尚未完成独立样本外验证，观察列表保存在本设备。").font(.caption).foregroundStyle(.secondary).padding(.horizontal,4)
                 }.padding(16)
-            }.background(MobileTheme.background).navigationTitle("数据与连接").refreshable { await store.refreshStatus() }
+            }.background(MobileTheme.background).navigationTitle("数据与连接").toolbarTitleDisplayMode(.inlineLarge).crispTopEdge().refreshable { await store.refreshStatus() }
             .fileImporter(isPresented:$importing,allowedContentTypes:[.json,UTType(filenameExtension:"guanlan") ?? .data]) { result in
                 switch result { case .success(let url):Task { await store.importConnection(url) };case .failure(let error):store.error=error.localizedDescription }
             }
